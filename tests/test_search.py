@@ -69,7 +69,7 @@ class TestListConversations:
     def test_list_all(self, db_path: Path):
         conn = sqlite3.connect(str(db_path))
         rows = conn.execute("SELECT * FROM conversations ORDER BY start_ts DESC").fetchall()
-        assert len(rows) == 3
+        assert len(rows) == 4
 
     def test_filter_by_project(self, db_path: Path):
         conn = sqlite3.connect(str(db_path))
@@ -85,5 +85,5 @@ class TestStats:
         conn = sqlite3.connect(str(db_path))
         conv_count = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
         prompt_count = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
-        assert conv_count == 3
+        assert conv_count == 4
         assert prompt_count > 0

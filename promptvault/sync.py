@@ -42,6 +42,27 @@ SLASH_COMMANDS = frozenset(
 )
 
 
+def resolve_pasted_content(entry: dict) -> str:
+    """Replace [Pasted text #N ...] placeholders with actual pasted content."""
+    display = entry["display"]
+    pasted = entry.get("pastedContents", {})
+    if not pasted:
+        return display
+
+    for key, paste_info in pasted.items():
+        if not isinstance(paste_info, dict):
+            continue
+        content = paste_info.get("content", "")
+        if not content:
+            continue
+        # Match [Pasted text #N] or [Pasted text #N +M lines]
+        pattern = rf"\[Pasted text #{re.escape(key)}[^\]]*\]"
+        # re.sub treats backslashes in replacement as escapes — use a lambda to avoid that
+        display = re.sub(pattern, lambda _: content.strip(), display)
+
+    return display
+
+
 def parse_history(history_path: Path) -> dict[str, list[dict]]:
     """Parse history.jsonl into sessions. Each session is a list of prompt entries."""
     sessions: dict[str, list[dict]] = defaultdict(list)
@@ -51,10 +72,18 @@ def parse_history(history_path: Path) -> dict[str, list[dict]]:
             if not line:
                 continue
             entry = json.loads(line)
+            # Resolve pasted content placeholders into actual text
+            entry["display"] = resolve_pasted_content(entry)
             sessions[entry["sessionId"]].append(entry)
-    # Sort prompts within each session by timestamp
+    # Sort prompts within each session by timestamp and deduplicate
     for session_id in sessions:
         sessions[session_id].sort(key=lambda e: e["timestamp"])
+        # Remove consecutive duplicates (same text within a session, e.g. double-submit)
+        deduped: list[dict] = []
+        for entry in sessions[session_id]:
+            if not deduped or entry["display"].strip() != deduped[-1]["display"].strip():
+                deduped.append(entry)
+        sessions[session_id] = deduped
     return dict(sessions)
 
 

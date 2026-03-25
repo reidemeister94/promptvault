@@ -11,6 +11,7 @@ from promptvault.sync import (
     is_slash_command,
     make_conversation_name,
     parse_history,
+    resolve_pasted_content,
     slugify,
 )
 
@@ -18,7 +19,7 @@ from promptvault.sync import (
 class TestParseHistory:
     def test_parses_all_sessions(self, tmp_history: Path):
         sessions = parse_history(tmp_history)
-        assert len(sessions) == 3
+        assert len(sessions) == 4
 
     def test_groups_prompts_by_session(self, tmp_history: Path):
         sessions = parse_history(tmp_history)
@@ -45,6 +46,44 @@ class TestSlashCommand:
 
     def test_slash_in_text_not_command(self):
         assert is_slash_command("use http://example.com") is False
+
+
+class TestResolvePastedContent:
+    def test_replaces_placeholder_with_content(self):
+        entry = {
+            "display": "[Pasted text #1 +3 lines]\n\nanalyze this",
+            "pastedContents": {
+                "1": {"id": 1, "type": "text", "content": "def hello():\n    return True"}
+            },
+        }
+        result = resolve_pasted_content(entry)
+        assert "def hello():" in result
+        assert "[Pasted text" not in result
+        assert "analyze this" in result
+
+    def test_no_pasted_contents(self):
+        entry = {"display": "just a normal prompt", "pastedContents": {}}
+        assert resolve_pasted_content(entry) == "just a normal prompt"
+
+    def test_multiple_pastes(self):
+        entry = {
+            "display": "[Pasted text #1] and [Pasted text #2 +5 lines]",
+            "pastedContents": {
+                "1": {"id": 1, "type": "text", "content": "FIRST"},
+                "2": {"id": 2, "type": "text", "content": "SECOND"},
+            },
+        }
+        result = resolve_pasted_content(entry)
+        assert "FIRST" in result
+        assert "SECOND" in result
+        assert "[Pasted text" not in result
+
+    def test_resolved_in_parse_history(self, tmp_history: Path):
+        sessions = parse_history(tmp_history)
+        # Session dddd has pasted content
+        prompts = sessions["dddd-0000-1111-2222"]
+        assert "def hello():" in prompts[0]["display"]
+        assert "[Pasted text" not in prompts[0]["display"]
 
 
 class TestSlugify:
@@ -90,7 +129,7 @@ class TestGenerateVault:
         vault_dir.mkdir()
         md_paths = generate_vault(sessions, vault_dir)
 
-        assert len(md_paths) == 3
+        assert len(md_paths) == 4
         for md_path in md_paths.values():
             full_path = vault_dir / md_path
             assert full_path.exists()
@@ -155,7 +194,7 @@ class TestBuildDatabase:
 
         conn = sqlite3.connect(str(db_path))
         count = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
-        assert count == 3
+        assert count == 4
 
     def test_fts_search_works(self, tmp_history: Path, tmp_output: Path):
         import sqlite3
@@ -185,4 +224,4 @@ class TestBuildDatabase:
 
         conn = sqlite3.connect(str(db_path))
         count = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
-        assert count == 3
+        assert count == 4

@@ -55,6 +55,19 @@ def tmp_history(tmp_path: Path) -> Path:
             "project": "/Users/test/project-a",
             "sessionId": "cccc-7777-8888-9999",
         },
+        {
+            "display": "[Pasted text #1 +3 lines]\n\nanalyze the pasted code",
+            "pastedContents": {
+                "1": {
+                    "id": 1,
+                    "type": "text",
+                    "content": "def hello():\n    print('world')\n    return True",
+                }
+            },
+            "timestamp": 1700300000000,
+            "project": "/Users/test/project-a",
+            "sessionId": "dddd-0000-1111-2222",
+        },
     ]
     with open(history_path, "w") as f:
         for entry in entries:
