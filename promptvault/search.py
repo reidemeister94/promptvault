@@ -26,7 +26,24 @@ YELLOW = "\033[33m"
 RESET = "\033[0m"
 
 
+def _auto_sync_if_stale(db_path: Path):
+    """Run sync if history.jsonl is newer than the DB (or DB doesn't exist)."""
+    history_path = Path(
+        os.environ.get("PROMPTVAULT_HISTORY", str(Path.home() / ".claude" / "history.jsonl"))
+    )
+    if not history_path.exists():
+        return
+    needs_sync = not db_path.exists() or history_path.stat().st_mtime > db_path.stat().st_mtime
+    if needs_sync:
+        from promptvault.sync import main as sync_main
+
+        print(f"{DIM}Syncing...{RESET}", file=sys.stderr, end=" ", flush=True)
+        sync_main(quiet=True)
+        print(f"{DIM}done.{RESET}", file=sys.stderr)
+
+
 def get_db(db_path: Path) -> sqlite3.Connection:
+    _auto_sync_if_stale(db_path)
     if not db_path.exists():
         print(f"Error: database not found at {db_path}", file=sys.stderr)
         print("Run 'promptvault-sync' first to build the database.", file=sys.stderr)
@@ -567,9 +584,9 @@ def main():
     if getattr(args, "no_fzf", False):
         pass  # already set
 
-    # Hidden: fast line output for fzf reload
+    # Hidden: fast line output for fzf reload (skip auto-sync for speed)
     if args.command == "_fzf-lines":
-        conn = get_db(db_path)
+        conn = sqlite3.connect(str(db_path))
         q = args.query if args.query and args.query.strip() else None
         lines = _build_conversation_lines(conn, q)
         sys.stdout.write("\n".join(lines) + "\n" if lines else "")

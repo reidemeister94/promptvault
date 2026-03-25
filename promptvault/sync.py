@@ -376,14 +376,18 @@ def build_database(
     conn.close()
 
 
-def main():
+def main(quiet: bool = False):
     """Entry point for promptvault-sync."""
+    log = (lambda *a, **kw: None) if quiet else print
+
     history_path = Path(os.environ.get("PROMPTVAULT_HISTORY", str(DEFAULT_HISTORY_PATH)))
     output_dir = Path(os.environ.get("PROMPTVAULT_OUTPUT", str(DEFAULT_OUTPUT_DIR)))
 
     if not history_path.exists():
-        print(f"Error: history file not found at {history_path}", file=sys.stderr)
-        sys.exit(1)
+        if not quiet:
+            print(f"Error: history file not found at {history_path}", file=sys.stderr)
+            sys.exit(1)
+        return
 
     vault_dir = output_dir / "vault"
     db_path = output_dir / "prompts.db"
@@ -394,27 +398,27 @@ def main():
     vault_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Reading history from {history_path}...")
+    log(f"Reading history from {history_path}...")
     sessions = parse_history(history_path)
 
-    print(f"Found {len(sessions)} conversations, {sum(len(p) for p in sessions.values())} prompts")
+    log(f"Found {len(sessions)} conversations, {sum(len(p) for p in sessions.values())} prompts")
 
     projects_dir = Path(os.environ.get("PROMPTVAULT_PROJECTS", str(DEFAULT_PROJECTS_DIR)))
     summaries = load_session_summaries(projects_dir)
-    print(f"Loaded {len(summaries)} session titles from Claude Code")
+    log(f"Loaded {len(summaries)} session titles from Claude Code")
 
-    print("Generating markdown vault...")
+    log("Generating markdown vault...")
     md_paths = generate_vault(sessions, vault_dir)
 
-    print("Generating vault index...")
+    log("Generating vault index...")
     generate_index(sessions, md_paths, vault_dir)
 
-    print("Building SQLite database...")
+    log("Building SQLite database...")
     build_database(sessions, md_paths, db_path, summaries)
 
-    print(f"\nDone! Vault: {vault_dir}")
-    print(f"Database: {db_path}")
-    print(f"Index: {vault_dir / '_index.md'}")
+    log(f"\nDone! Vault: {vault_dir}")
+    log(f"Database: {db_path}")
+    log(f"Index: {vault_dir / '_index.md'}")
 
 
 if __name__ == "__main__":
