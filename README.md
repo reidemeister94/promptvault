@@ -35,9 +35,9 @@ Claude Code stores conversation history in `~/.claude/history.jsonl` — a raw, 
 - **Not persistent.** Claude Code compacts and deletes old session files without warning.
 - **Not shareable.** Raw JSONL doesn't open in Obsidian or publish on GitHub.
 
-**promptvault** turns that history into a searchable markdown library + SQLite database. Browse conversations in Obsidian, or search them instantly from the terminal with an interactive fzf-powered interface.
+**promptvault** turns that history into a searchable markdown library + SQLite database. Browse in Obsidian or search from the terminal with fzf.
 
-Zero Python dependencies. Pure stdlib.
+Zero dependencies. Pure stdlib.
 
 <p align="center">
   <img src="docs/images/terminal-demo.svg" alt="promptvault in action" width="100%"/>
@@ -53,14 +53,14 @@ Zero Python dependencies. Pure stdlib.
 
 `promptvault-sync` reads your Claude Code history, groups prompts by conversation, and generates:
 
-1. **Markdown vault** — One `.md` file per conversation, organized by `YYYY/MM/`, with YAML frontmatter. Drop the folder into Obsidian and browse your prompt history.
+1. **Markdown vault** — One `.md` per conversation, organized by `YYYY/MM/`, with YAML frontmatter. Drop into Obsidian to browse your prompt history.
 
-2. **SQLite database** — FTS5 full-text search with BM25 ranking. Search thousands of prompts in milliseconds.
+2. **SQLite database** — FTS5 full-text search with BM25 ranking. Searches thousands of prompts in milliseconds.
 
-The sync is **idempotent** — it always rebuilds from `history.jsonl`, so it's impossible to reach a bad state.
+The sync is **idempotent** — always rebuilds from `history.jsonl`, so it's impossible to reach a bad state.
 
 **Bonus features:**
-- `[Pasted text #N +M lines]` placeholders are automatically resolved with the actual pasted content
+- `[Pasted text #N +M lines]` placeholders are resolved with actual pasted content
 - Consecutive duplicate prompts within a session are deduplicated
 - Slash commands (`/help`, `/compact`, etc.) are filtered out
 - Conversation titles from Claude Code's `sessions-index.json` are used when available
@@ -95,7 +95,7 @@ cd promptvault
 pip install -e .
 ```
 
-> **Windows (without WSL):** use `pip install -e .` from PowerShell or Command Prompt. If `python` is not on your PATH, install it from [python.org](https://www.python.org/downloads/) or via `winget install Python.Python.3.12`.
+> **Windows (without WSL):** use `pip install -e .` from PowerShell or Command Prompt. If `python` is not on your PATH, install from [python.org](https://www.python.org/downloads/) or via `winget install Python.Python.3.12`.
 
 ### Sync your history
 
@@ -123,8 +123,6 @@ promptvault                        # interactive browser (all conversations)
 promptvault search "migration"     # search + interactive results
 ```
 
-That's it. Your entire Claude Code history is now searchable.
-
 ---
 
 ## Commands
@@ -133,16 +131,16 @@ All commands launch an **interactive fzf interface** by default (when fzf is ins
 
 The interactive mode shows:
 - **Left panel** — conversations with date, prompt count, project, and title
-- **Right panel** — live preview of all prompts in the selected conversation, with search terms highlighted
-- **Controls** — `↑↓` navigate, `Enter` opens in `$EDITOR`, `Ctrl-Y` copies to clipboard, `Esc` quits, type to search (full-text across all prompts)
+- **Right panel** — live preview of prompts in the selected conversation, with search terms highlighted
+- **Controls** — `Up/Down` navigate, `Enter` opens in `$EDITOR`, `Ctrl-Y` copies to clipboard, `Esc` quits, type to search
 
 ### `promptvault`
 
-Launch the interactive conversation browser. No arguments needed — browse all conversations, type to filter.
+Browse all conversations interactively. Type to filter.
 
 ### `promptvault search "query"`
 
-Full-text search using SQLite FTS5. Finds conversations containing the query, ranked by relevance.
+Full-text search via SQLite FTS5, ranked by relevance.
 
 ```bash
 promptvault search "database migration"
@@ -323,14 +321,14 @@ promptvault/
 | Decision | Why |
 |----------|-----|
 | **`history.jsonl` as source of truth** | Authoritative, always complete, maintained by Claude Code. Session JSONL files are too complex for prompt-only extraction. |
-| **Full rebuild on every sync** | Simpler than incremental — no state bugs, no dedup logic. ~1 second for 3000 prompts. |
+| **Full rebuild on every sync** | Simpler than incremental — no state bugs, no dedup logic. ~1s for 3000 prompts. |
 | **Date-based directory structure** | Flat directories are unusable at 900+ files. Project-based grouping breaks when prompts span projects. Date-based maps to Obsidian's Calendar plugin. |
 | **SQLite FTS5 for search** | Built into Python stdlib. BM25 ranking included. No external engine needed. |
 | **fzf for interactive UX** | Industry-standard fuzzy finder. Exact substring matching, live preview, keyboard navigation. Falls back to plain text when unavailable. |
 | **Zero Python dependencies** | Python stdlib has everything: `json`, `sqlite3`, `pathlib`, `argparse`. fzf is a system tool, not a Python package. |
 | **Hook as convenience, not requirement** | The sync script is the authoritative data path. If the hook fails, nothing is lost. |
-| **fzf search via DB reload, not text filter** | Typing in fzf queries SQLite FTS on each keystroke (`--disabled` + `change:reload`). This searches ALL prompts across ALL conversations, not just titles. Prefix matching via `*` wildcard. |
-| **Session titles from `sessions-index.json`** | Claude Code auto-generates conversation summaries. We use them when available, with first-prompt fallback. |
+| **fzf search via DB reload** | Typing in fzf queries SQLite FTS on each keystroke (`--disabled` + `change:reload`). Searches all prompts across all conversations, not just titles. Prefix matching via `*` wildcard. |
+| **Session titles from `sessions-index.json`** | Claude Code auto-generates conversation summaries. Used when available, with first-prompt fallback. |
 
 ### Environment Variables
 
@@ -343,7 +341,7 @@ promptvault/
 | `PROMPTVAULT_PROJECTS` | `~/.claude/projects` | Claude Code projects dir (for session titles) |
 | `PROMPTVAULT_CAPTURE_LOG` | `~/.claude/prompt-library/capture.jsonl` | Real-time capture log |
 
-> On Windows (without WSL), `~` maps to `%USERPROFILE%`. You can override paths using these environment variables if your Claude Code config lives elsewhere.
+> On Windows (without WSL), `~` maps to `%USERPROFILE%`. Override paths with these environment variables if your Claude Code config lives elsewhere.
 
 ---
 
@@ -360,9 +358,9 @@ make lint            # Lint with ruff
 make format          # Format with ruff
 ```
 
-> **Windows (without WSL):** `make` is not available by default. Run the commands directly: `pip install -e ".[dev]"`, `pytest`, `ruff check .`, `ruff format .`.
+> **Windows (without WSL):** `make` is not available by default. Run directly: `pip install -e ".[dev]"`, `pytest`, `ruff check .`, `ruff format .`.
 
-116 tests covering sync, search, hook, and end-to-end functionality. All tests use synthetic data — no dependency on real `history.jsonl`.
+116 tests covering sync, search, hook, and end-to-end. All use synthetic data — no dependency on real `history.jsonl`.
 
 ---
 
@@ -385,7 +383,7 @@ Contributions welcome. Open an issue to discuss before submitting a PR.
 - New search features (date ranges, regex)
 - Better conversation naming heuristics
 - Support for additional AI coding tools
-- Performance optimizations for very large histories
+- Performance optimizations for large histories
 
 ---
 
