@@ -83,6 +83,14 @@ Related plan: 0001__2026-03-25__implementation_plan__claude-prompt-library.md
 ```
 **Implications:** Maps PID to session -- useful for checking if session is still active, but NOT needed for the prompt library.
 
+### ~/.claude/projects/<encoded-path>/sessions-index.json -- Session Metadata with Titles
+**Files examined:** Multiple `sessions-index.json` files across projects
+**Discovery date:** 2026-03-26
+**Structure:** JSON with `version` and `entries` array. Each entry has `sessionId`, `summary` (auto-generated title), `firstPrompt`, `messageCount`, `created`, `modified`, `gitBranch`, `projectPath`.
+**Key field:** `summary` contains Claude Code's auto-generated conversation title (3-6 words, well-formatted). This is the same title shown by `claude --resume`.
+**Coverage:** Only 132 of 902 sessions have summaries. Only 9 of 23 projects have the file. Appears to have been introduced in a specific Claude Code version and is not reliably maintained across all sessions.
+**Implications:** Excellent source for conversation titles when available, but MUST have a fallback. We use `summary` → first-prompt-based title → `(no text prompts)` as the cascade.
+
 ### ~/.claude/projects/<encoded-path>/<session-id>.jsonl -- Full Conversation
 **Files examined:** Multiple session JSONL files
 **Structure:** Rich JSONL with types: `file-history-snapshot`, `progress`, `user`, `assistant`, `tool_use`, etc.

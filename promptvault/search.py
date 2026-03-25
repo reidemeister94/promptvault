@@ -71,6 +71,16 @@ def has_fzf() -> bool:
     return shutil.which("fzf") is not None
 
 
+def _short_title(text: str, max_words: int = 4) -> str:
+    """Shorten a title to max_words, capped at 35 chars."""
+    text = clean_prompt_text(text)
+    words = text.split()[:max_words]
+    title = " ".join(words)
+    if len(title) > 35:
+        title = title[:33] + ".."
+    return title
+
+
 def _short_project(project: str) -> str:
     """Shorten project path to a readable name. Home dir → ~."""
     if not project:
@@ -116,9 +126,21 @@ def _build_conversation_lines(conn: sqlite3.Connection, query: str | None = None
     for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
         proj = _short_project(project)
         date_str = ts_to_short(start_ts)
-        line = f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {display_name}"
+        title = _short_title(display_name)
+        # Field 1: md_path (hidden), Field 2: visible display, Field 3: full text (hidden, searchable)
+        line = f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {title}"
         lines.append(line)
     return lines
+
+
+def _fts_prepare_query(query: str) -> str:
+    """Prepare query for FTS5: add prefix wildcard for partial word matching."""
+    words = query.strip().split()
+    if not words:
+        return query
+    # Add * to last word for prefix matching (user is still typing)
+    words[-1] = words[-1] + "*"
+    return " ".join(words)
 
 
 def _fts_session_ids(conn: sqlite3.Connection, query: str) -> list[str]:
@@ -130,56 +152,63 @@ def _fts_session_ids(conn: sqlite3.Connection, query: str) -> list[str]:
         WHERE prompts_fts MATCH ?
         LIMIT 500
     """
+    fts_query = _fts_prepare_query(query)
     try:
-        ids = [r[0] for r in conn.execute(sql, (query,)).fetchall()]
+        ids = [r[0] for r in conn.execute(sql, (fts_query,)).fetchall()]
         if not ids and " " in query.strip():
             words = query.strip().split()
-            or_query = " OR ".join(words)
+            or_query = " OR ".join(w + "*" for w in words)
             ids = [r[0] for r in conn.execute(sql, (or_query,)).fetchall()]
         return ids
     except sqlite3.OperationalError:
         return []
 
 
-def _fzf_preview_script(vault_dir: Path, query: str | None = None) -> str:
-    """Shell command for fzf --preview. Shows prompts with optional search highlight."""
-    if query:
-        # Use grep --color to highlight the search term in the preview
-        # Escape single quotes in query for shell safety
-        safe_q = query.replace("'", "'\\''")
-        return (
-            f"md_path=$(echo {{}} | cut -f1); "
-            f"file='{vault_dir}/'\"$md_path\"; "
-            f'if [ -f "$file" ]; then '
-            f"sed -n '/^## Prompt/,$p' \"$file\" | "
-            f"GREP_COLOR='1;33' grep --color=always -i -E '{safe_q}|$'; "
-            f"else echo 'File not found'; fi"
-        )
+def _fzf_preview_script(vault_dir: Path) -> str:
+    """Shell command for fzf --preview. Uses {q} to highlight the live query."""
+    # {q} is replaced by fzf with the current query string in real time
+    # cat -s squeezes consecutive blank lines into one
+    return (
+        f"md_path=$(echo {{}} | cut -f1); "
+        f"file='{vault_dir}/'\"$md_path\"; "
+        f"q={{q}}; "
+        f'if [ ! -f "$file" ]; then echo "File not found"; '
+        f'elif [ -n "$q" ]; then '
+        f"sed -n '/^## Prompt/,$p' \"$file\" | cat -s | "
+        f"GREP_COLOR='1;33' grep --color=always -i -E \"$q|$\"; "
+        f"else "
+        f"sed -n '/^## Prompt/,$p' \"$file\" | cat -s; "
+        f"fi"
+    )
+
+
+def _fzf_copy_script(vault_dir: Path) -> str:
+    """Shell command for ctrl-y: copy selected conversation's prompts to clipboard."""
     return (
         f"md_path=$(echo {{}} | cut -f1); "
         f"file='{vault_dir}/'\"$md_path\"; "
         f'if [ -f "$file" ]; then '
-        f"sed -n '/^## Prompt/,$p' \"$file\"; "
-        f"else echo 'File not found'; fi"
+        f"sed -n '/^## Prompt/,$p' \"$file\" | pbcopy; "
+        f"fi"
     )
 
 
 def _run_fzf(
     lines: list[str],
     vault_dir: Path,
+    db_path: Path | None = None,
     query: str | None = None,
-    header: str = "↑↓ navigate · enter open · esc quit · type to filter",
+    header: str = "↑↓ navigate · enter open · ctrl-y copy · esc quit",
     prompt: str = "promptvault> ",
 ):
     """Run fzf with conversation lines and preview."""
     fzf_cmd = [
         "fzf",
         "--ansi",
-        "--exact",  # exact substring match, not fuzzy
         "--delimiter=\t",
         "--with-nth=2",  # display only the visible part (after tab)
         "--preview",
-        _fzf_preview_script(vault_dir, query),
+        _fzf_preview_script(vault_dir),
         "--preview-window=right:50%:wrap",
         f"--header={header}",
         f"--prompt={prompt}",
@@ -188,7 +217,21 @@ def _run_fzf(
         "--layout=reverse",
         "--border=rounded",
         "--color=header:italic:dim,prompt:cyan,pointer:cyan,marker:green",
+        "--bind",
+        f"ctrl-y:execute-silent({_fzf_copy_script(vault_dir)})+bell",
     ]
+
+    # If db_path provided, use FTS search on keystroke instead of fzf's built-in filter
+    if db_path:
+        pv_bin = shutil.which("promptvault") or f"{sys.executable} -m promptvault.search"
+        reload_cmd = f"{pv_bin} --db {db_path} _fzf-lines {{q}}"
+        fzf_cmd.extend(
+            [
+                "--disabled",  # disable built-in filtering
+                "--bind",
+                f"change:reload({reload_cmd} 2>/dev/null || true)",
+            ]
+        )
 
     if query:
         fzf_cmd.extend(["--query", query])
@@ -213,7 +256,9 @@ def _run_fzf(
         sys.exit(1)
 
 
-def cmd_search_interactive(conn: sqlite3.Connection, query: str | None, vault_dir: Path):
+def cmd_search_interactive(
+    conn: sqlite3.Connection, query: str | None, vault_dir: Path, db_path: Path | None = None
+):
     """Interactive fzf-powered search with conversations."""
     lines = _build_conversation_lines(conn, query)
     if not lines:
@@ -223,7 +268,7 @@ def cmd_search_interactive(conn: sqlite3.Connection, query: str | None, vault_di
             print("No conversations found.")
         return
 
-    _run_fzf(lines, vault_dir, query)
+    _run_fzf(lines, vault_dir, db_path=db_path, query=query)
 
 
 # ---------------------------------------------------------------------------
@@ -243,12 +288,13 @@ def _fts_search(conn: sqlite3.Connection, query: str, limit: int = 200) -> list:
         ORDER BY rank
         LIMIT ?
     """
+    fts_query = _fts_prepare_query(query)
     try:
-        rows = conn.execute(sql, (query, limit)).fetchall()
+        rows = conn.execute(sql, (fts_query, limit)).fetchall()
         # Fallback to OR if no results with AND
         if not rows and " " in query.strip():
             words = query.strip().split()
-            or_query = " OR ".join(words)
+            or_query = " OR ".join(w + "*" for w in words)
             rows = conn.execute(sql, (or_query, limit)).fetchall()
         return rows
     except sqlite3.OperationalError:
@@ -285,7 +331,7 @@ def cmd_search(args: argparse.Namespace, db_path: Path):
         else:
             print("Provide a search query or install fzf for interactive mode.")
     else:
-        cmd_search_interactive(conn, query, vault_dir)
+        cmd_search_interactive(conn, query, vault_dir, db_path)
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +358,10 @@ def cmd_recent(args: argparse.Namespace, db_path: Path):
         for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
             proj = _short_project(project)
             date_str = ts_to_short(start_ts)
-            lines.append(f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {display_name}")
+            title = _short_title(display_name)
+            lines.append(
+                f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {title}\t{display_name}"
+            )
         if not lines:
             print("No conversations found.")
             return
@@ -389,7 +438,10 @@ def cmd_list(args: argparse.Namespace, db_path: Path):
         for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
             proj = _short_project(project)
             date_str = ts_to_short(start_ts)
-            lines.append(f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {display_name}")
+            title = _short_title(display_name)
+            lines.append(
+                f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {title}\t{display_name}"
+            )
         _run_fzf(
             lines, vault_dir, header="Conversations · ↑↓ navigate · enter open", prompt="list> "
         )
@@ -498,6 +550,10 @@ def build_parser() -> argparse.ArgumentParser:
     # stats
     subparsers.add_parser("stats", help="Show vault statistics")
 
+    # hidden: used by fzf reload
+    fzf_p = subparsers.add_parser("_fzf-lines")
+    fzf_p.add_argument("query", nargs="?", default=None)
+
     return parser
 
 
@@ -510,6 +566,14 @@ def main():
     # Propagate global --no-fzf to subcommand
     if getattr(args, "no_fzf", False):
         pass  # already set
+
+    # Hidden: fast line output for fzf reload
+    if args.command == "_fzf-lines":
+        conn = get_db(db_path)
+        q = args.query if args.query and args.query.strip() else None
+        lines = _build_conversation_lines(conn, q)
+        sys.stdout.write("\n".join(lines) + "\n" if lines else "")
+        return
 
     commands = {
         "search": cmd_search,
@@ -525,7 +589,7 @@ def main():
         if has_fzf() and sys.stdout.isatty() and not getattr(args, "no_fzf", False):
             conn = get_db(db_path)
             vault_dir = Path(os.environ.get("PROMPTVAULT_VAULT", str(DEFAULT_VAULT_DIR)))
-            cmd_search_interactive(conn, None, vault_dir)
+            cmd_search_interactive(conn, None, vault_dir, db_path)
         else:
             # Fallback: show recent conversations in plain mode
             args.count = 15

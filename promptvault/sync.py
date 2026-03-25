@@ -14,6 +14,7 @@ from pathlib import Path
 
 DEFAULT_HISTORY_PATH = Path.home() / ".claude" / "history.jsonl"
 DEFAULT_OUTPUT_DIR = Path.home() / ".claude" / "prompt-library"
+DEFAULT_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 
 SLASH_COMMANDS = frozenset(
     {
@@ -40,6 +41,24 @@ SLASH_COMMANDS = frozenset(
         "/fast",
     }
 )
+
+
+def load_session_summaries(projects_dir: Path) -> dict[str, str]:
+    """Load auto-generated session summaries from Claude Code's sessions-index.json files."""
+    summaries: dict[str, str] = {}
+    if not projects_dir.exists():
+        return summaries
+    for idx_file in projects_dir.glob("*/sessions-index.json"):
+        try:
+            data = json.loads(idx_file.read_text())
+            for entry in data.get("entries", []):
+                sid = entry.get("sessionId", "")
+                summary = entry.get("summary", "")
+                if sid and summary:
+                    summaries[sid] = summary
+        except (json.JSONDecodeError, OSError):
+            continue
+    return summaries
 
 
 def resolve_pasted_content(entry: dict) -> str:
@@ -126,8 +145,10 @@ def _clean_for_title(text: str) -> str:
     return text
 
 
-def make_display_name(prompts: list[dict], session_id: str) -> str:
-    """Generate a human-readable title from the first non-command prompt."""
+def make_display_name(prompts: list[dict], session_id: str, summary: str | None = None) -> str:
+    """Generate a human-readable title. Prefers Claude's auto-generated summary."""
+    if summary:
+        return summary
     for p in prompts:
         display = p["display"].strip()
         if is_slash_command(display) or len(display) <= 2:
@@ -135,7 +156,6 @@ def make_display_name(prompts: list[dict], session_id: str) -> str:
         clean = _clean_for_title(display)
         if len(clean) < 3:
             continue
-        # Capitalize and truncate
         title = clean[0].upper() + clean[1:]
         return title[:80] + "..." if len(title) > 80 else title
     return "(no text prompts)"
@@ -169,8 +189,8 @@ def generate_markdown(session_id: str, prompts: list[dict], name: str) -> str:
     end_dt = ts_to_datetime(prompts[-1]["timestamp"])
     project = prompts[0].get("project", "unknown")
 
-    # Title from first real prompt
-    title_prompt = all_prompts[0]["display"].strip() if all_prompts else name
+    # Title from first real prompt — clean whitespace
+    title_prompt = re.sub(r"\s+", " ", all_prompts[0]["display"]).strip() if all_prompts else name
     title = title_prompt[:80] if len(title_prompt) > 80 else title_prompt
     # Capitalize first letter
     if title:
@@ -203,7 +223,10 @@ def generate_markdown(session_id: str, prompts: list[dict], name: str) -> str:
         lines.append("")
         lines.append(f"## Prompt {i} — {dt.strftime('%H:%M:%S')}")
         lines.append("")
-        lines.append(p["display"].strip())
+        # Strip trailing whitespace per line, then squeeze consecutive blank lines
+        text = p["display"].strip()
+        text = re.sub(r"[^\S\n]+$", "", text, flags=re.MULTILINE)
+        lines.append(re.sub(r"\n{3,}", "\n\n", text))
 
     lines.append("")
     return "\n".join(lines)
@@ -275,7 +298,12 @@ def generate_index(sessions: dict[str, list[dict]], md_paths: dict[str, str], va
     (vault_dir / "_index.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def build_database(sessions: dict[str, list[dict]], md_paths: dict[str, str], db_path: Path):
+def build_database(
+    sessions: dict[str, list[dict]],
+    md_paths: dict[str, str],
+    db_path: Path,
+    summaries: dict[str, str] | None = None,
+):
     """Build SQLite database with FTS5 from parsed sessions."""
     # Remove existing DB for idempotent rebuild
     if db_path.exists():
@@ -320,7 +348,8 @@ def build_database(sessions: dict[str, list[dict]], md_paths: dict[str, str], db
         real_prompts = [p for p in prompts if not is_slash_command(p["display"].strip())]
 
         name = make_conversation_name(prompts, session_id)
-        display_name = make_display_name(prompts, session_id)
+        summary = (summaries or {}).get(session_id)
+        display_name = make_display_name(prompts, session_id, summary)
         project = prompts[0].get("project", "")
         start_ts = prompts[0]["timestamp"]
         end_ts = prompts[-1]["timestamp"]
@@ -370,6 +399,10 @@ def main():
 
     print(f"Found {len(sessions)} conversations, {sum(len(p) for p in sessions.values())} prompts")
 
+    projects_dir = Path(os.environ.get("PROMPTVAULT_PROJECTS", str(DEFAULT_PROJECTS_DIR)))
+    summaries = load_session_summaries(projects_dir)
+    print(f"Loaded {len(summaries)} session titles from Claude Code")
+
     print("Generating markdown vault...")
     md_paths = generate_vault(sessions, vault_dir)
 
@@ -377,7 +410,7 @@ def main():
     generate_index(sessions, md_paths, vault_dir)
 
     print("Building SQLite database...")
-    build_database(sessions, md_paths, db_path)
+    build_database(sessions, md_paths, db_path, summaries)
 
     print(f"\nDone! Vault: {vault_dir}")
     print(f"Database: {db_path}")

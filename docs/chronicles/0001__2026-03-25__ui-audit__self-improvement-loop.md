@@ -96,20 +96,45 @@ bar_len = max(1, int(cnt / max_cnt * max_bar))
 
 ---
 
-## Metrics After Audit
+## Metrics After Full Audit (2026-03-26)
 
 | Metric | Before | After |
 |--------|--------|-------|
 | Conversations shown | 902 (including empty) | 630 (real prompts only) |
 | Prompts counted | 2606 (including slash commands) | 2278 (real prompts only) |
-| Test suite | 35 passed, 1 failed | 36 passed |
+| Test suite | 35 passed, 1 failed | 116 passed (36 unit + 29 search + 51 E2E) |
+| Session summaries loaded | 0 | 132 (from Claude Code's sessions-index.json) |
 
 ---
 
-## Remaining Observations
+## Additional issues found and fixed (2026-03-26)
 
-These are minor items that could be addressed in future iterations:
+See `0002__2026-03-26__discoveries__claude-code-internals-and-fzf-patterns.md` for detailed write-ups.
 
-- **Duplicate conversation titles**: Two consecutive sessions starting with the same prompt (e.g., "Scarica tutti i dati da...") show identical titles in the list. A disambiguation suffix (session time or ID fragment) could help.
-- **`cd /Users/...` prompts from VSCode debug**: Some prompts are auto-generated debug commands pasted from the IDE. `_clean_for_title()` strips leading `cd` paths, but they still appear in search results.
-- **fzf preview could highlight search terms**: Currently only highlights when a query is passed via CLI; fzf's own filter typing doesn't trigger grep highlighting.
+### 10. fzf preview didn't highlight search terms typed interactively
+
+**Fix:** Use `{q}` placeholder in preview script — fzf replaces it with the current query in real-time.
+
+### 11. Trailing whitespace in prompts caused fzf preview artifacts
+
+**Fix:** Strip trailing whitespace per line in `generate_markdown()` before writing markdown files.
+
+### 12. Blank lines in prompts cluttered the preview
+
+**Fix:** Squeeze 3+ consecutive blank lines to 1 in markdown generation.
+
+### 13. fzf left panel showed full prompt text that scrolled on search
+
+**Fix:** `_short_title()` limits the visible title to 4 words / 35 chars. Full text is in the preview.
+
+### 14. fzf search didn't find partial words
+
+**Fix:** FTS5 requires `*` for prefix matching. `_fts_prepare_query()` appends it to the last word.
+
+### 15. fzf's built-in filter couldn't search across all prompts in a conversation
+
+**Fix:** Replaced fzf filtering with `--disabled` + `--bind 'change:reload(promptvault _fzf-lines {q})'`. Each keystroke queries SQLite FTS across all prompts.
+
+### 16. Markdown title had trailing whitespace from first prompt
+
+**Fix:** Collapse whitespace in title generation: `re.sub(r"\s+", " ", text).strip()`

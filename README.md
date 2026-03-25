@@ -63,6 +63,8 @@ The sync is **idempotent** — it always rebuilds from `history.jsonl`, so it's 
 - `[Pasted text #N +M lines]` placeholders are automatically resolved with the actual pasted content
 - Consecutive duplicate prompts within a session are deduplicated
 - Slash commands (`/help`, `/compact`, etc.) are filtered out
+- Conversation titles from Claude Code's `sessions-index.json` are used when available
+- Trailing whitespace and excessive blank lines are cleaned up
 
 ---
 
@@ -104,6 +106,7 @@ promptvault-sync
 ```
 Reading history from ~/.claude/history.jsonl...
 Found 899 conversations, 2890 prompts
+Loaded 132 session titles from Claude Code
 Generating markdown vault...
 Building SQLite database...
 
@@ -131,7 +134,7 @@ All commands launch an **interactive fzf interface** by default (when fzf is ins
 The interactive mode shows:
 - **Left panel** — conversations with date, prompt count, project, and title
 - **Right panel** — live preview of all prompts in the selected conversation, with search terms highlighted
-- **Controls** — `↑↓` navigate, `Enter` opens in `$EDITOR`, `Esc` quits, type to filter
+- **Controls** — `↑↓` navigate, `Enter` opens in `$EDITOR`, `Ctrl-Y` copies to clipboard, `Esc` quits, type to search (full-text across all prompts)
 
 ### `promptvault`
 
@@ -300,7 +303,11 @@ promptvault/
 │   ├── conftest.py   # Shared fixtures (synthetic history.jsonl)
 │   ├── test_sync.py
 │   ├── test_search.py
-│   └── test_hook.py
+│   ├── test_hook.py
+│   └── test_e2e.py   # End-to-end: builds DB from scratch, tests every path
+├── docs/
+│   ├── plans/           # Research and implementation plans
+│   └── chronicles/      # Development session write-ups
 ├── pyproject.toml
 ├── Makefile
 ├── .pre-commit-config.yaml
@@ -322,6 +329,8 @@ promptvault/
 | **fzf for interactive UX** | Industry-standard fuzzy finder. Exact substring matching, live preview, keyboard navigation. Falls back to plain text when unavailable. |
 | **Zero Python dependencies** | Python stdlib has everything: `json`, `sqlite3`, `pathlib`, `argparse`. fzf is a system tool, not a Python package. |
 | **Hook as convenience, not requirement** | The sync script is the authoritative data path. If the hook fails, nothing is lost. |
+| **fzf search via DB reload, not text filter** | Typing in fzf queries SQLite FTS on each keystroke (`--disabled` + `change:reload`). This searches ALL prompts across ALL conversations, not just titles. Prefix matching via `*` wildcard. |
+| **Session titles from `sessions-index.json`** | Claude Code auto-generates conversation summaries. We use them when available, with first-prompt fallback. |
 
 ### Environment Variables
 
@@ -331,6 +340,7 @@ promptvault/
 | `PROMPTVAULT_OUTPUT` | `~/.claude/prompt-library` | Output directory for vault + DB |
 | `PROMPTVAULT_DB` | `~/.claude/prompt-library/prompts.db` | SQLite database |
 | `PROMPTVAULT_VAULT` | `~/.claude/prompt-library/vault` | Markdown vault directory |
+| `PROMPTVAULT_PROJECTS` | `~/.claude/projects` | Claude Code projects dir (for session titles) |
 | `PROMPTVAULT_CAPTURE_LOG` | `~/.claude/prompt-library/capture.jsonl` | Real-time capture log |
 
 > On Windows (without WSL), `~` maps to `%USERPROFILE%`. You can override paths using these environment variables if your Claude Code config lives elsewhere.
@@ -352,7 +362,7 @@ make format          # Format with ruff
 
 > **Windows (without WSL):** `make` is not available by default. Run the commands directly: `pip install -e ".[dev]"`, `pytest`, `ruff check .`, `ruff format .`.
 
-36 tests covering sync, search, and hook functionality. All tests use synthetic data — no dependency on real `history.jsonl`.
+116 tests covering sync, search, hook, and end-to-end functionality. All tests use synthetic data — no dependency on real `history.jsonl`.
 
 ---
 
