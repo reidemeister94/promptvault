@@ -92,9 +92,9 @@ def is_slash_command(prompt: str) -> bool:
     stripped = prompt.strip()
     if not stripped.startswith("/"):
         return False
-    # Match known commands or any /word pattern
+    # Match known commands or any /word pattern (covers custom commands like /plugin)
     cmd = stripped.split()[0].rstrip()
-    return cmd in SLASH_COMMANDS or re.match(r"^/[a-z-]+$", cmd) is not None
+    return cmd in SLASH_COMMANDS or re.match(r"^/[a-z][\w-]*$", cmd) is not None
 
 
 def slugify(text: str, max_length: int = 60) -> str:
@@ -106,7 +106,7 @@ def slugify(text: str, max_length: int = 60) -> str:
 
 
 def make_conversation_name(prompts: list[dict], session_id: str) -> str:
-    """Generate a human-readable name from the first non-command prompt."""
+    """Generate a slug name from the first non-command prompt."""
     for p in prompts:
         display = p["display"].strip()
         if not is_slash_command(display) and len(display) > 2:
@@ -114,6 +114,31 @@ def make_conversation_name(prompts: list[dict], session_id: str) -> str:
             if slug:
                 return slug
     return f"session-{session_id[:8]}"
+
+
+def _clean_for_title(text: str) -> str:
+    """Strip markers and noise from text for use as a title."""
+    text = re.sub(r"\[Image #\d+[^\]]*\]", "", text)
+    text = re.sub(r"\[Pasted text #\d+[^\]]*\]", "", text)
+    # Remove leading cd/env commands (debug pastes)
+    text = re.sub(r"^cd\s+\S+\s*;\s*/usr/bin/env\s+\S+\s*", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def make_display_name(prompts: list[dict], session_id: str) -> str:
+    """Generate a human-readable title from the first non-command prompt."""
+    for p in prompts:
+        display = p["display"].strip()
+        if is_slash_command(display) or len(display) <= 2:
+            continue
+        clean = _clean_for_title(display)
+        if len(clean) < 3:
+            continue
+        # Capitalize and truncate
+        title = clean[0].upper() + clean[1:]
+        return title[:80] + "..." if len(title) > 80 else title
+    return "(no text prompts)"
 
 
 def ts_to_datetime(ts_ms: int) -> datetime:
@@ -263,6 +288,7 @@ def build_database(sessions: dict[str, list[dict]], md_paths: dict[str, str], db
         CREATE TABLE conversations (
             session_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
+            display_name TEXT NOT NULL,
             project TEXT,
             start_ts INTEGER NOT NULL,
             end_ts INTEGER NOT NULL,
@@ -292,21 +318,23 @@ def build_database(sessions: dict[str, list[dict]], md_paths: dict[str, str], db
 
     for session_id, prompts in sessions.items():
         real_prompts = [p for p in prompts if not is_slash_command(p["display"].strip())]
-        if not real_prompts:
-            real_prompts = prompts
 
         name = make_conversation_name(prompts, session_id)
+        display_name = make_display_name(prompts, session_id)
         project = prompts[0].get("project", "")
         start_ts = prompts[0]["timestamp"]
         end_ts = prompts[-1]["timestamp"]
         md_path = md_paths.get(session_id, "")
 
+        # Use real prompt count (0 if only slash commands)
         conn.execute(
-            "INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (session_id, name, project, start_ts, end_ts, len(real_prompts), md_path),
+            "INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (session_id, name, display_name, project, start_ts, end_ts, len(real_prompts), md_path),
         )
 
-        for seq, p in enumerate(real_prompts, 1):
+        # Only index real prompts for search
+        store_prompts = real_prompts if real_prompts else prompts
+        for seq, p in enumerate(store_prompts, 1):
             conn.execute(
                 "INSERT INTO prompts (session_id, prompt_text, timestamp, project, seq) "
                 "VALUES (?, ?, ?, ?, ?)",

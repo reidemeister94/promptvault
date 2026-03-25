@@ -12,6 +12,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from promptvault import __version__
+
 DEFAULT_DB_PATH = Path.home() / ".claude" / "prompt-library" / "prompts.db"
 DEFAULT_VAULT_DIR = Path.home() / ".claude" / "prompt-library" / "vault"
 
@@ -41,14 +43,22 @@ def ts_to_short(ts_ms: int) -> str:
 
 
 def clean_prompt_text(text: str) -> str:
-    """Clean prompt text for display: collapse whitespace, strip pasted-text markers."""
+    """Clean prompt text for display: collapse whitespace, strip markers."""
     text = re.sub(r"\[Pasted text #\d+[^\]]*\]", "", text)
+    # Count images before removing
+    image_count = len(re.findall(r"\[Image #\d+[^\]]*\]", text))
+    text = re.sub(r"\[Image #\d+[^\]]*\]", "", text)
     text = re.sub(r"\s+", " ", text).strip()
+    # If only images remain, show a label
+    if not text and image_count:
+        return f"(image{'s' if image_count > 1 else ''})"
     return text
 
 
 def truncate(text: str, max_len: int = 120) -> str:
     text = clean_prompt_text(text)
+    if not text:
+        return "(empty)"
     return text[:max_len] + "..." if len(text) > max_len else text
 
 
@@ -69,9 +79,9 @@ def _short_project(project: str) -> str:
     home_name = Path.home().name
     if name == home_name:
         return "~"
-    # Truncate long names
-    if len(name) > 20:
-        return name[:18] + ".."
+    max_len = 20
+    if len(name) > max_len:
+        return name[: max_len - 1] + "…"
     return name
 
 
@@ -85,7 +95,7 @@ def _build_conversation_lines(conn: sqlite3.Connection, query: str | None = None
         placeholders = ",".join("?" * len(session_ids))
         rows = conn.execute(
             f"""
-            SELECT session_id, name, project, start_ts, end_ts, prompt_count, md_path
+            SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
             FROM conversations
             WHERE session_id IN ({placeholders})
             ORDER BY start_ts DESC
@@ -95,17 +105,18 @@ def _build_conversation_lines(conn: sqlite3.Connection, query: str | None = None
     else:
         rows = conn.execute(
             """
-            SELECT session_id, name, project, start_ts, end_ts, prompt_count, md_path
+            SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
             FROM conversations
+            WHERE prompt_count > 0
             ORDER BY start_ts DESC
             """
         ).fetchall()
 
     lines = []
-    for _sid, name, project, start_ts, _end_ts, prompt_count, md_path in rows:
+    for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
         proj = _short_project(project)
         date_str = ts_to_short(start_ts)
-        line = f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {name}"
+        line = f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {display_name}"
         lines.append(line)
     return lines
 
@@ -223,7 +234,7 @@ def cmd_search_interactive(conn: sqlite3.Connection, query: str | None, vault_di
 def _fts_search(conn: sqlite3.Connection, query: str, limit: int = 200) -> list:
     """FTS5 search with OR fallback."""
     sql = """
-        SELECT p.prompt_text, p.timestamp, p.project, c.name, c.md_path,
+        SELECT p.prompt_text, p.timestamp, p.project, COALESCE(c.display_name, c.name), c.md_path,
                bm25(prompts_fts) AS rank
         FROM prompts_fts
         JOIN prompts p ON prompts_fts.rowid = p.id
@@ -253,10 +264,11 @@ def cmd_search_plain(conn: sqlite3.Connection, query: str, limit: int = 20):
         return
 
     print(f"\n{BOLD}Found {len(rows)} result(s) for '{query}':{RESET}\n")
-    for prompt_text, ts, project, conv_name, md_path, _rank in rows:
+    for prompt_text, ts, project, conv_name, _md_path, _rank in rows:
         project_short = _short_project(project)
+        short_name = conv_name[:50] + "..." if len(conv_name) > 50 else conv_name
         print(f"  {CYAN}{ts_to_str(ts)}{RESET}  {BOLD}{truncate(prompt_text)}{RESET}")
-        print(f"  {DIM}{conv_name} | {project_short} | {md_path}{RESET}")
+        print(f"  {DIM}{short_name} · {project_short}{RESET}")
         print()
 
 
@@ -291,16 +303,16 @@ def cmd_recent(args: argparse.Namespace, db_path: Path):
     if not no_fzf and sys.stdout.isatty() and has_fzf():
         rows = conn.execute(
             """
-            SELECT session_id, name, project, start_ts, end_ts, prompt_count, md_path
-            FROM conversations ORDER BY start_ts DESC LIMIT ?
+            SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
+            FROM conversations WHERE prompt_count > 0 ORDER BY start_ts DESC LIMIT ?
             """,
             (limit,),
         ).fetchall()
         lines = []
-        for _sid, name, project, start_ts, _end_ts, prompt_count, md_path in rows:
+        for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
             proj = _short_project(project)
             date_str = ts_to_short(start_ts)
-            lines.append(f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {name}")
+            lines.append(f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {display_name}")
         if not lines:
             print("No conversations found.")
             return
@@ -313,9 +325,12 @@ def cmd_recent(args: argparse.Namespace, db_path: Path):
     else:
         rows = conn.execute(
             """
-            SELECT p.prompt_text, p.timestamp, p.project, c.name, c.md_path
+            SELECT p.prompt_text, p.timestamp, p.project, COALESCE(c.display_name, c.name), c.md_path
             FROM prompts p
             JOIN conversations c ON p.session_id = c.session_id
+            WHERE p.prompt_text NOT GLOB '/[a-z]*'
+              AND p.prompt_text NOT GLOB '[[]Image #[0-9]*[]]'
+              AND LENGTH(TRIM(p.prompt_text)) > 0
             ORDER BY p.timestamp DESC
             LIMIT ?
             """,
@@ -323,10 +338,11 @@ def cmd_recent(args: argparse.Namespace, db_path: Path):
         ).fetchall()
 
         print(f"\n{BOLD}Last {len(rows)} prompts:{RESET}\n")
-        for prompt_text, ts, project, conv_name, md_path in rows:
+        for prompt_text, ts, project, conv_name, _md_path in rows:
             project_short = _short_project(project)
+            short_name = conv_name[:50] + "..." if len(conv_name) > 50 else conv_name
             print(f"  {CYAN}{ts_to_str(ts)}{RESET}  {BOLD}{truncate(prompt_text)}{RESET}")
-            print(f"  {DIM}{conv_name} | {project_short} | {md_path}{RESET}")
+            print(f"  {DIM}{short_name} · {project_short}{RESET}")
             print()
 
 
@@ -336,9 +352,9 @@ def cmd_list(args: argparse.Namespace, db_path: Path):
     vault_dir = Path(os.environ.get("PROMPTVAULT_VAULT", str(DEFAULT_VAULT_DIR)))
     no_fzf = getattr(args, "no_fzf", False)
 
-    sql = "SELECT session_id, name, project, start_ts, end_ts, prompt_count, md_path FROM conversations"
+    sql = "SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path FROM conversations"
     params: list = []
-    conditions: list[str] = []
+    conditions: list[str] = ["prompt_count > 0"]
 
     if args.date:
         try:
@@ -355,8 +371,7 @@ def cmd_list(args: argparse.Namespace, db_path: Path):
         conditions.append("project LIKE ?")
         params.append(f"%{args.project}%")
 
-    if conditions:
-        sql += " WHERE " + " AND ".join(conditions)
+    sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY start_ts DESC"
 
     if args.limit:
@@ -371,27 +386,25 @@ def cmd_list(args: argparse.Namespace, db_path: Path):
 
     if not no_fzf and sys.stdout.isatty() and has_fzf():
         lines = []
-        for _sid, name, project, start_ts, _end_ts, prompt_count, md_path in rows:
+        for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
             proj = _short_project(project)
             date_str = ts_to_short(start_ts)
-            lines.append(f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {name}")
+            lines.append(f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {display_name}")
         _run_fzf(
             lines, vault_dir, header="Conversations · ↑↓ navigate · enter open", prompt="list> "
         )
     else:
         print(f"\n{BOLD}{len(rows)} conversation(s):{RESET}\n")
-        for _sid, name, project, start_ts, end_ts, prompt_count, md_path in rows:
+        for _sid, display_name, project, start_ts, end_ts, prompt_count, md_path in rows:
             project_short = _short_project(project)
             start = ts_to_str(start_ts)
             end_time = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc).strftime("%H:%M")
             print(
-                f"  {CYAN}{start}-{end_time}{RESET}  "
-                f"{BOLD}{name}{RESET}  "
+                f"  {CYAN}{start}–{end_time}{RESET}  "
+                f"{BOLD}{display_name}{RESET}  "
                 f"{GREEN}{prompt_count}p{RESET}  "
                 f"{DIM}{project_short}{RESET}"
             )
-            if md_path:
-                print(f"  {DIM}{md_path}{RESET}")
             print()
 
 
@@ -399,9 +412,13 @@ def cmd_stats(args: argparse.Namespace, db_path: Path):
     """Show vault statistics."""
     conn = get_db(db_path)
 
-    conv_count = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
-    prompt_count = conn.execute("SELECT COUNT(*) FROM prompts").fetchone()[0]
-    project_count = conn.execute("SELECT COUNT(DISTINCT project) FROM conversations").fetchone()[0]
+    conv_count = conn.execute(
+        "SELECT COUNT(*) FROM conversations WHERE prompt_count > 0"
+    ).fetchone()[0]
+    prompt_count = conn.execute("SELECT SUM(prompt_count) FROM conversations").fetchone()[0] or 0
+    project_count = conn.execute(
+        "SELECT COUNT(DISTINCT project) FROM conversations WHERE prompt_count > 0"
+    ).fetchone()[0]
 
     first_ts = conn.execute("SELECT MIN(start_ts) FROM conversations").fetchone()[0]
     last_ts = conn.execute("SELECT MAX(end_ts) FROM conversations").fetchone()[0]
@@ -416,7 +433,7 @@ def cmd_stats(args: argparse.Namespace, db_path: Path):
         """
     ).fetchall()
 
-    print(f"\n{BOLD}Prompt Vault Stats{RESET}\n")
+    print(f"\n{BOLD}Prompt Vault{RESET} {DIM}v{__version__}{RESET}\n")
     print(f"  Conversations:  {CYAN}{conv_count}{RESET}")
     print(f"  Prompts:        {CYAN}{prompt_count}{RESET}")
     print(f"  Projects:       {CYAN}{project_count}{RESET}")
@@ -425,10 +442,13 @@ def cmd_stats(args: argparse.Namespace, db_path: Path):
 
     if top_projects:
         print(f"\n  {BOLD}Top projects:{RESET}")
+        max_cnt = top_projects[0][1] if top_projects else 1
+        max_bar = 30
         for project, cnt in top_projects:
             project_short = _short_project(project)
-            bar = YELLOW + "█" * min(cnt, 40) + RESET
-            print(f"    {project_short:30s} {bar} {cnt}")
+            bar_len = max(1, int(cnt / max_cnt * max_bar))
+            bar = YELLOW + "█" * bar_len + RESET
+            print(f"    {project_short:22s} {bar} {cnt}")
 
     print()
 
@@ -501,13 +521,16 @@ def main():
     if args.command in commands:
         commands[args.command](args, db_path)
     else:
-        # No subcommand → launch interactive search (like ctrl+R)
-        if has_fzf() and sys.stdout.isatty():
+        # No subcommand → launch interactive browse or show recent
+        if has_fzf() and sys.stdout.isatty() and not getattr(args, "no_fzf", False):
             conn = get_db(db_path)
             vault_dir = Path(os.environ.get("PROMPTVAULT_VAULT", str(DEFAULT_VAULT_DIR)))
             cmd_search_interactive(conn, None, vault_dir)
         else:
-            parser.print_help()
+            # Fallback: show recent conversations in plain mode
+            args.count = 15
+            args.no_fzf = True
+            cmd_recent(args, db_path)
 
 
 if __name__ == "__main__":

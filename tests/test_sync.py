@@ -206,10 +206,10 @@ class TestBuildDatabase:
 
         conn = sqlite3.connect(str(db_path))
         rows = conn.execute(
-            "SELECT prompt_text FROM prompts_fts WHERE prompts_fts MATCH 'shipping'"
+            "SELECT prompt_text FROM prompts_fts WHERE prompts_fts MATCH 'pytest'"
         ).fetchall()
         assert len(rows) == 1
-        assert "shipping" in rows[0][0].lower()
+        assert "pytest" in rows[0][0].lower()
 
     def test_idempotent_rebuild(self, tmp_history: Path, tmp_output: Path):
         """Running build_database twice produces the same result."""

@@ -197,7 +197,7 @@ prompt-search "database migration"
 prompt-search --recent 10
 
 # Search within project
-prompt-search --project shipping "API endpoint"
+prompt-search --project auth "API endpoint"
 
 # List conversations for a date
 prompt-search --date 2026-03-25

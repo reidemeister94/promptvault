@@ -163,7 +163,7 @@ List conversations. Filter by date or project.
 ```bash
 promptvault list                          # all conversations
 promptvault list --date 2026-03-25        # today's conversations
-promptvault list --project shipping       # filter by project name
+promptvault list --project auth       # filter by project name
 promptvault list --date 2026-03-25 -n 5   # today's top 5
 ```
 
