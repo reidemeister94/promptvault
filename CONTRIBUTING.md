@@ -23,7 +23,7 @@ make setup-dev-env  # installs pre-commit hooks
 
 ## Guidelines
 
-- **Zero dependencies.** promptvault uses only Python stdlib. Don't add `pip install` requirements.
+- **Zero dependencies.** pv uses only Python stdlib. Don't add `pip install` requirements.
 - **Tests required.** All new features and bug fixes need tests. We use synthetic data only — never touch real `~/.claude/`.
 - **Keep it simple.** Read the [Core Pillars](CLAUDE.md) before proposing large changes.
 

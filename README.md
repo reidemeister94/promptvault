@@ -36,12 +36,12 @@ Claude Code stores conversation history in `~/.claude/history.jsonl` — a raw, 
 - **Not persistent.** Claude Code compacts and deletes old session files without warning.
 - **Not shareable.** Raw JSONL doesn't open in Obsidian or publish on GitHub.
 
-**promptvault** turns that history into a searchable markdown library + SQLite database. Browse in Obsidian or search from the terminal with fzf.
+**pv** turns that history into a searchable markdown library + SQLite database. Browse in Obsidian or search from the terminal with fzf.
 
 Zero dependencies. Pure stdlib.
 
 <p align="center">
-  <img src="docs/images/terminal-demo.svg" alt="promptvault in action" width="100%"/>
+  <img src="docs/images/terminal-demo.svg" alt="pv in action" width="100%"/>
 </p>
 
 ---
@@ -49,10 +49,10 @@ Zero dependencies. Pure stdlib.
 ## How It Works
 
 <p align="center">
-  <img src="docs/images/how-it-works.svg" alt="How promptvault works" width="100%"/>
+  <img src="docs/images/how-it-works.svg" alt="How pv works" width="100%"/>
 </p>
 
-`promptvault-sync` reads your Claude Code history, groups prompts by conversation, and generates:
+`pv-sync` reads your Claude Code history, groups prompts by conversation, and generates:
 
 1. **Markdown vault** — One `.md` per conversation, organized by `YYYY/MM/`, with YAML frontmatter. Drop into Obsidian to browse your prompt history.
 
@@ -107,7 +107,7 @@ pip install -e .
 ### Sync your history
 
 ```bash
-promptvault-sync
+pv-sync
 ```
 
 ```
@@ -130,7 +130,7 @@ pv                        # interactive browser (all conversations)
 pv search "migration"     # search + interactive results
 ```
 
-> **Tip:** `pv` is a short alias for `promptvault`. Both work. Same for `pv-sync` / `promptvault-sync`.
+> `pv` is a short alias for `promptvault`. Both work interchangeably. Same for `pv-sync` / `promptvault-sync`.
 
 ---
 
@@ -143,54 +143,54 @@ The interactive mode shows:
 - **Right panel** — live preview of prompts in the selected conversation, with search terms highlighted
 - **Controls** — `Up/Down` navigate, `Enter` opens in `$EDITOR`, `Ctrl-Y` copies to clipboard, `Esc` quits, type to search
 
-### `promptvault`
+### `pv`
 
 Browse all conversations interactively. Type to filter.
 
-### `promptvault search "query"`
+### `pv search "query"`
 
 Full-text search via SQLite FTS5, ranked by relevance.
 
 ```bash
-promptvault search "database migration"
-promptvault search "auth middleware"
-promptvault search "pytest fixtures" --no-fzf   # plain text output
+pv search "database migration"
+pv search "auth middleware"
+pv search "pytest fixtures" --no-fzf   # plain text output
 ```
 
-### `promptvault recent [N]`
+### `pv recent [N]`
 
 Show the most recent conversations. Defaults to 20.
 
 ```bash
-promptvault recent       # last 20 conversations
-promptvault recent 50    # last 50
+pv recent       # last 20 conversations
+pv recent 50    # last 50
 ```
 
-### `promptvault list`
+### `pv list`
 
 List conversations. Filter by date or project.
 
 ```bash
-promptvault list                          # all conversations
-promptvault list --date 2026-03-25        # today's conversations
-promptvault list --project auth       # filter by project name
-promptvault list --date 2026-03-25 -n 5   # today's top 5
+pv list                          # all conversations
+pv list --date 2026-03-25        # today's conversations
+pv list --project auth           # filter by project name
+pv list --date 2026-03-25 -n 5   # today's top 5
 ```
 
-### `promptvault stats`
+### `pv stats`
 
 Vault overview — conversation count, prompt count, top projects, date range.
 
 ```bash
-promptvault stats
+pv stats
 ```
 
-### `promptvault-sync`
+### `pv-sync`
 
 Rebuild the vault and database from `~/.claude/history.jsonl`. Idempotent.
 
 ```bash
-promptvault-sync
+pv-sync
 ```
 
 ---
@@ -389,7 +389,7 @@ make format          # Format with ruff
 
 ## Contributing
 
-Contributions welcome. Open an issue to discuss before submitting a PR.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Ideas:**
 - New search features (date ranges, regex)
@@ -406,9 +406,17 @@ MIT
 ---
 
 <p align="center">
+  <b>If pv saves your prompts, save us a star!</b>
+</p>
+
+<p align="center">
   <a href="https://github.com/reidemeister94/promptvault/stargazers"><img src="https://img.shields.io/github/stars/reidemeister94/promptvault?style=social" alt="Star on GitHub"/></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/reidemeister94/promptvault/issues">Report an issue</a> &middot; <a href="#contributing">Contribute</a>
+  <a href="https://star-history.com/#reidemeister94/promptvault&Date"><img src="https://api.star-history.com/svg?repos=reidemeister94/promptvault&type=Date" alt="Star History Chart" width="600"/></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/reidemeister94/promptvault/issues">Report an issue</a> &middot; <a href="CONTRIBUTING.md">Contribute</a>
 </p>

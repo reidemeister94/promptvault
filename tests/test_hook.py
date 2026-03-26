@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -30,10 +31,7 @@ class TestHookScript:
             input=input_data,
             capture_output=True,
             text=True,
-            env={
-                "PATH": "/usr/bin:/bin",
-                "PROMPTVAULT_CAPTURE_LOG": str(log_path),
-            },
+            env={**os.environ, "PROMPTVAULT_CAPTURE_LOG": str(log_path)},
         )
 
         assert result.returncode == 0
@@ -55,10 +53,7 @@ class TestHookScript:
             input="not valid json",
             capture_output=True,
             text=True,
-            env={
-                "PATH": "/usr/bin:/bin",
-                "PROMPTVAULT_CAPTURE_LOG": str(tmp_path / "capture.jsonl"),
-            },
+            env={**os.environ, "PROMPTVAULT_CAPTURE_LOG": str(tmp_path / "capture.jsonl")},
         )
 
         assert result.returncode == 0
@@ -83,10 +78,7 @@ class TestHookScript:
                 input=input_data,
                 capture_output=True,
                 text=True,
-                env={
-                    "PATH": "/usr/bin:/bin",
-                    "PROMPTVAULT_CAPTURE_LOG": str(log_path),
-                },
+                env={**os.environ, "PROMPTVAULT_CAPTURE_LOG": str(log_path)},
             )
 
         lines = log_path.read_text().strip().split("\n")
