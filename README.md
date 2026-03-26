@@ -39,6 +39,13 @@ pv                             # browse conversations
 pv search "database migration" # full-text search
 ```
 
+Or install from source:
+
+```bash
+git clone https://github.com/reidemeister94/promptvault.git
+cd promptvault && pip install -e .
+```
+
 > `pv` is the short alias. `promptvault` / `promptvault-sync` also work.
 
 Optional: install [fzf](https://github.com/junegunn/fzf) for the interactive UI (`brew install fzf` / `apt install fzf`). Without it, pv falls back to plain text.
