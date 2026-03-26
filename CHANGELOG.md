@@ -1,3 +1,13 @@
+## 0.0.5 (2026-03-26)
+
+### Feat
+
+- add multi conv export and copy
+
+### Fix
+
+- improvements
+
 ## 0.0.4 (2026-03-26)
 
 ### Fix
