@@ -117,3 +117,5 @@ project_summary.txt
 
 docs/plans/
 docs/chronicles/
+
+scripts/generate_images.py

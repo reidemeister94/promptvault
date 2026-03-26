@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/reidemeister94/promptvault/main/docs/images/social-preview.svg" alt="promptvault" width="100%"/>
+  <img src="docs/images/social-preview.svg" alt="promptvault" width="100%"/>
 </p>
 
 <p align="center">
@@ -24,7 +24,7 @@ Claude Code stores conversations in `~/.claude/history.jsonl` — not searchable
 **pv** turns that history into a **searchable markdown library + SQLite database**. Browse in Obsidian, search from the terminal with fzf. Zero dependencies. Pure stdlib.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/reidemeister94/promptvault/main/docs/images/terminal-demo.svg" alt="pv in action" width="100%"/>
+  <img src="docs/images/terminal-demo.svg" alt="pv in action" width="100%"/>
 </p>
 
 ---
@@ -61,7 +61,7 @@ Optional: install [fzf](https://github.com/junegunn/fzf) for the interactive UI 
 ## How It Works
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/reidemeister94/promptvault/main/docs/images/how-it-works.svg" alt="How pv works" width="100%"/>
+  <img src="docs/images/how-it-works.svg" alt="How pv works" width="100%"/>
 </p>
 
 `pv-sync` reads `history.jsonl`, groups prompts by conversation, and generates:

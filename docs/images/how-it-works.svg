@@ -1,74 +1,128 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="200" viewBox="0 0 900 200">
-  <defs>
-    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#0f172a"/>
-      <stop offset="100%" style="stop-color:#1e293b"/>
-    </linearGradient>
-  </defs>
-  <rect width="900" height="200" fill="url(#bg2)" rx="12"/>
+<svg class="rich-terminal" viewBox="0 0 994 464.79999999999995" xmlns="http://www.w3.org/2000/svg">
+    <!-- Generated with Rich https://www.textualize.io -->
+    <style>
 
-  <!-- history.jsonl -->
-  <g transform="translate(40, 60)">
-    <rect width="160" height="80" rx="8" fill="#1e293b" stroke="#3b82f6" stroke-width="2"/>
-    <text x="80" y="35" text-anchor="middle" font-family="monospace" font-size="13" fill="#3b82f6">history.jsonl</text>
-    <text x="80" y="55" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">3000+ prompts</text>
-    <text x="80" y="70" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">900+ sessions</text>
-  </g>
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Regular"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Regular.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Regular.woff") format("woff");
+        font-style: normal;
+        font-weight: 400;
+    }
+    @font-face {
+        font-family: "Fira Code";
+        src: local("FiraCode-Bold"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff2/FiraCode-Bold.woff2") format("woff2"),
+                url("https://cdnjs.cloudflare.com/ajax/libs/firacode/6.2.0/woff/FiraCode-Bold.woff") format("woff");
+        font-style: bold;
+        font-weight: 700;
+    }
 
-  <!-- Arrow 1 -->
-  <g transform="translate(210, 90)">
-    <line x1="0" y1="10" x2="60" y2="10" stroke="#475569" stroke-width="2"/>
-    <polygon points="60,4 72,10 60,16" fill="#475569"/>
-    <text x="36" y="0" text-anchor="middle" font-family="system-ui, sans-serif" font-size="10" fill="#64748b">sync</text>
-  </g>
+    .terminal-2092689342-matrix {
+        font-family: Fira Code, monospace;
+        font-size: 20px;
+        line-height: 24.4px;
+        font-variant-east-asian: full-width;
+    }
 
-  <!-- promptvault-sync -->
-  <g transform="translate(290, 50)">
-    <rect width="140" height="100" rx="8" fill="#1e293b" stroke="#8b5cf6" stroke-width="2"/>
-    <text x="70" y="40" text-anchor="middle" font-family="monospace" font-size="14" fill="#8b5cf6">pv-sync</text>
-    <text x="70" y="72" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">Parse, group,</text>
-    <text x="70" y="87" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">generate</text>
-  </g>
+    .terminal-2092689342-title {
+        font-size: 18px;
+        font-weight: bold;
+        font-family: arial;
+    }
 
-  <!-- Arrow 2 top -->
-  <g transform="translate(440, 70)">
-    <line x1="0" y1="0" x2="60" y2="-20" stroke="#475569" stroke-width="2"/>
-    <polygon points="57,-27 70,-20 57,-14" fill="#475569"/>
-  </g>
+    .terminal-2092689342-r1 { fill: #c5c8c6 }
+.terminal-2092689342-r2 { fill: #68a0b3 }
+.terminal-2092689342-r3 { fill: #868887 }
+.terminal-2092689342-r4 { fill: #d0b344;font-weight: bold }
+.terminal-2092689342-r5 { fill: #98a84b }
+.terminal-2092689342-r6 { fill: #98729f }
+.terminal-2092689342-r7 { fill: #68a0b3;font-weight: bold }
+    </style>
 
-  <!-- Arrow 2 bottom -->
-  <g transform="translate(440, 120)">
-    <line x1="0" y1="0" x2="60" y2="20" stroke="#475569" stroke-width="2"/>
-    <polygon points="57,14 70,20 57,27" fill="#475569"/>
-  </g>
+    <defs>
+    <clipPath id="terminal-2092689342-clip-terminal">
+      <rect x="0" y="0" width="975.0" height="413.79999999999995" />
+    </clipPath>
+    <clipPath id="terminal-2092689342-line-0">
+    <rect x="0" y="1.5" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-1">
+    <rect x="0" y="25.9" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-2">
+    <rect x="0" y="50.3" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-3">
+    <rect x="0" y="74.7" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-4">
+    <rect x="0" y="99.1" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-5">
+    <rect x="0" y="123.5" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-6">
+    <rect x="0" y="147.9" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-7">
+    <rect x="0" y="172.3" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-8">
+    <rect x="0" y="196.7" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-9">
+    <rect x="0" y="221.1" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-10">
+    <rect x="0" y="245.5" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-11">
+    <rect x="0" y="269.9" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-12">
+    <rect x="0" y="294.3" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-13">
+    <rect x="0" y="318.7" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-14">
+    <rect x="0" y="343.1" width="976" height="24.65"/>
+            </clipPath>
+<clipPath id="terminal-2092689342-line-15">
+    <rect x="0" y="367.5" width="976" height="24.65"/>
+            </clipPath>
+    </defs>
 
-  <!-- Markdown vault -->
-  <g transform="translate(510, 20)">
-    <rect width="160" height="70" rx="8" fill="#1e293b" stroke="#22c55e" stroke-width="2"/>
-    <text x="80" y="28" text-anchor="middle" font-family="monospace" font-size="13" fill="#22c55e">vault/*.md</text>
-    <text x="80" y="48" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">Obsidian-compatible</text>
-    <text x="80" y="62" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">YYYY/MM/ structure</text>
-  </g>
+    <rect fill="#292929" stroke="rgba(255,255,255,0.35)" stroke-width="1" x="1" y="1" width="992" height="462.8" rx="8"/><text class="terminal-2092689342-title" fill="#c5c8c6" text-anchor="middle" x="496" y="27">How&#160;promptvault&#160;works</text>
+            <g transform="translate(26,22)">
+            <circle cx="0" cy="0" r="7" fill="#ff5f57"/>
+            <circle cx="22" cy="0" r="7" fill="#febc2e"/>
+            <circle cx="44" cy="0" r="7" fill="#28c840"/>
+            </g>
 
-  <!-- SQLite DB -->
-  <g transform="translate(510, 110)">
-    <rect width="160" height="70" rx="8" fill="#1e293b" stroke="#eab308" stroke-width="2"/>
-    <text x="80" y="28" text-anchor="middle" font-family="monospace" font-size="13" fill="#eab308">prompts.db</text>
-    <text x="80" y="48" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">SQLite + FTS5</text>
-    <text x="80" y="62" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">Full-text search</text>
-  </g>
+    <g transform="translate(9, 41)" clip-path="url(#terminal-2092689342-clip-terminal)">
 
-  <!-- Arrow 3 -->
-  <g transform="translate(680, 145)">
-    <line x1="0" y1="0" x2="60" y2="0" stroke="#475569" stroke-width="2"/>
-    <polygon points="60,-6 72,0 60,6" fill="#475569"/>
-  </g>
-
-  <!-- Search CLI -->
-  <g transform="translate(760, 110)">
-    <rect width="120" height="70" rx="8" fill="#1e293b" stroke="#f97316" stroke-width="2"/>
-    <text x="60" y="28" text-anchor="middle" font-family="monospace" font-size="14" fill="#f97316">pv</text>
-    <text x="60" y="48" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">search, recent</text>
-    <text x="60" y="62" text-anchor="middle" font-family="system-ui, sans-serif" font-size="11" fill="#64748b">list, stats</text>
-  </g>
+    <g class="terminal-2092689342-matrix">
+    <text class="terminal-2092689342-r1" x="976" y="20" textLength="12.2" clip-path="url(#terminal-2092689342-line-0)">
+</text><text class="terminal-2092689342-r2" x="24.4" y="44.4" textLength="12.2" clip-path="url(#terminal-2092689342-line-1)">~</text><text class="terminal-2092689342-r2" x="36.6" y="44.4" textLength="109.8" clip-path="url(#terminal-2092689342-line-1)">/.claude/</text><text class="terminal-2092689342-r2" x="146.4" y="44.4" textLength="158.6" clip-path="url(#terminal-2092689342-line-1)">history.jsonl</text><text class="terminal-2092689342-r3" x="378.2" y="44.4" textLength="390.4" clip-path="url(#terminal-2092689342-line-1)">←&#160;Your&#160;Claude&#160;Code&#160;conversations</text><text class="terminal-2092689342-r1" x="976" y="44.4" textLength="12.2" clip-path="url(#terminal-2092689342-line-1)">
+</text><text class="terminal-2092689342-r3" x="170.8" y="68.8" textLength="12.2" clip-path="url(#terminal-2092689342-line-2)">│</text><text class="terminal-2092689342-r1" x="976" y="68.8" textLength="12.2" clip-path="url(#terminal-2092689342-line-2)">
+</text><text class="terminal-2092689342-r3" x="170.8" y="93.2" textLength="12.2" clip-path="url(#terminal-2092689342-line-3)">▼</text><text class="terminal-2092689342-r1" x="976" y="93.2" textLength="12.2" clip-path="url(#terminal-2092689342-line-3)">
+</text><text class="terminal-2092689342-r4" x="97.6" y="117.6" textLength="85.4" clip-path="url(#terminal-2092689342-line-4)">pv-sync</text><text class="terminal-2092689342-r3" x="366" y="117.6" textLength="414.8" clip-path="url(#terminal-2092689342-line-4)">parse,&#160;deduplicate,&#160;resolve&#160;pastes</text><text class="terminal-2092689342-r1" x="976" y="117.6" textLength="12.2" clip-path="url(#terminal-2092689342-line-4)">
+</text><text class="terminal-2092689342-r3" x="109.8" y="142" textLength="134.2" clip-path="url(#terminal-2092689342-line-5)">│&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;│</text><text class="terminal-2092689342-r1" x="976" y="142" textLength="12.2" clip-path="url(#terminal-2092689342-line-5)">
+</text><text class="terminal-2092689342-r3" x="109.8" y="166.4" textLength="134.2" clip-path="url(#terminal-2092689342-line-6)">▼&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;▼</text><text class="terminal-2092689342-r1" x="976" y="166.4" textLength="12.2" clip-path="url(#terminal-2092689342-line-6)">
+</text><text class="terminal-2092689342-r5" x="24.4" y="190.8" textLength="170.8" clip-path="url(#terminal-2092689342-line-7)">Markdown&#160;Vault</text><text class="terminal-2092689342-r5" x="231.8" y="190.8" textLength="183" clip-path="url(#terminal-2092689342-line-7)">SQLite&#160;Database</text><text class="terminal-2092689342-r1" x="976" y="190.8" textLength="12.2" clip-path="url(#terminal-2092689342-line-7)">
+</text><text class="terminal-2092689342-r3" x="24.4" y="215.2" textLength="170.8" clip-path="url(#terminal-2092689342-line-8)">vault/YYYY/MM/</text><text class="terminal-2092689342-r3" x="244" y="215.2" textLength="231.8" clip-path="url(#terminal-2092689342-line-8)">FTS5&#160;+&#160;BM25&#160;ranking</text><text class="terminal-2092689342-r1" x="976" y="215.2" textLength="12.2" clip-path="url(#terminal-2092689342-line-8)">
+</text><text class="terminal-2092689342-r3" x="24.4" y="239.6" textLength="195.2" clip-path="url(#terminal-2092689342-line-9)">YAML&#160;frontmatter</text><text class="terminal-2092689342-r3" x="244" y="239.6" textLength="231.8" clip-path="url(#terminal-2092689342-line-9)">Millisecond&#160;queries</text><text class="terminal-2092689342-r1" x="976" y="239.6" textLength="12.2" clip-path="url(#terminal-2092689342-line-9)">
+</text><text class="terminal-2092689342-r3" x="109.8" y="264" textLength="134.2" clip-path="url(#terminal-2092689342-line-10)">│&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;│</text><text class="terminal-2092689342-r1" x="976" y="264" textLength="12.2" clip-path="url(#terminal-2092689342-line-10)">
+</text><text class="terminal-2092689342-r3" x="109.8" y="288.4" textLength="134.2" clip-path="url(#terminal-2092689342-line-11)">▼&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;&#160;▼</text><text class="terminal-2092689342-r1" x="976" y="288.4" textLength="12.2" clip-path="url(#terminal-2092689342-line-11)">
+</text><text class="terminal-2092689342-r6" x="48.8" y="312.8" textLength="97.6" clip-path="url(#terminal-2092689342-line-12)">Obsidian</text><text class="terminal-2092689342-r7" x="231.8" y="312.8" textLength="24.4" clip-path="url(#terminal-2092689342-line-12)">pv</text><text class="terminal-2092689342-r3" x="268.4" y="312.8" textLength="219.6" clip-path="url(#terminal-2092689342-line-12)">interactive&#160;search</text><text class="terminal-2092689342-r1" x="976" y="312.8" textLength="12.2" clip-path="url(#terminal-2092689342-line-12)">
+</text><text class="terminal-2092689342-r3" x="48.8" y="337.2" textLength="97.6" clip-path="url(#terminal-2092689342-line-13)">Browse&#160;&amp;</text><text class="terminal-2092689342-r3" x="231.8" y="337.2" textLength="366" clip-path="url(#terminal-2092689342-line-13)">fzf-powered&#160;with&#160;live&#160;preview,</text><text class="terminal-2092689342-r1" x="976" y="337.2" textLength="12.2" clip-path="url(#terminal-2092689342-line-13)">
+</text><text class="terminal-2092689342-r3" x="48.8" y="361.6" textLength="109.8" clip-path="url(#terminal-2092689342-line-14)">search&#160;in</text><text class="terminal-2092689342-r3" x="219.6" y="361.6" textLength="341.6" clip-path="url(#terminal-2092689342-line-14)">project/date&#160;filters,&#160;export</text><text class="terminal-2092689342-r1" x="976" y="361.6" textLength="12.2" clip-path="url(#terminal-2092689342-line-14)">
+</text><text class="terminal-2092689342-r3" x="48.8" y="386" textLength="122" clip-path="url(#terminal-2092689342-line-15)">your&#160;vault</text><text class="terminal-2092689342-r1" x="976" y="386" textLength="12.2" clip-path="url(#terminal-2092689342-line-15)">
+</text><text class="terminal-2092689342-r1" x="976" y="410.4" textLength="12.2" clip-path="url(#terminal-2092689342-line-16)">
+</text>
+    </g>
+    </g>
 </svg>
