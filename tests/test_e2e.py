@@ -40,7 +40,6 @@ from promptvault.search import (
     clean_prompt_text,
     cmd_search_plain,
     cmd_stats,
-    get_db,
     truncate,
 )
 
@@ -294,8 +293,8 @@ class TestDatabaseIntegrity:
         row = conn.execute(
             "SELECT display_name FROM conversations WHERE session_id = 'sess-0003'"
         ).fetchone()
-        # Should use first real prompt text, not session-XXXX
-        assert "check these screenshots" in row[0].lower() or "image" not in row[0].lower()
+        # Should use first real prompt text (image-only prompts are skipped, text prompt wins)
+        assert row[0] == "Check these screenshots"
 
     def test_slash_only_display_name(self, e2e_env):
         conn = sqlite3.connect(str(e2e_env["db_path"]))
@@ -514,20 +513,18 @@ class TestCLIE2E:
         assert "No results" in out
 
     def test_recent_plain(self, e2e_env, capsys):
+        from promptvault.search import cmd_recent
+
         args = build_parser().parse_args(["recent", "--no-fzf", "5"])
-        args.no_fzf = True
-        conn = get_db(e2e_env["db_path"])
-        # Simulate recent plain output
-        rows = conn.execute(
-            """SELECT p.prompt_text FROM prompts p
-               JOIN conversations c ON p.session_id = c.session_id
-               WHERE p.prompt_text NOT GLOB '/[a-z]*'
-               ORDER BY p.timestamp DESC LIMIT 5"""
-        ).fetchall()
-        assert len(rows) >= 1
-        # No slash commands in results
-        for (text,) in rows:
-            assert not text.strip().startswith("/")
+        cmd_recent(args, e2e_env["db_path"])
+        out = capsys.readouterr().out
+        assert "prompts:" in out.lower()
+        # Verify no slash commands in output
+        for line in out.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("/") and not stripped.startswith("//"):
+                # Should not have slash commands like /help, /compact, /clear
+                assert not any(cmd in stripped for cmd in ["/help", "/compact", "/clear"])
 
     def test_fzf_lines_subcommand_no_query(self, e2e_env):
         """_fzf-lines without query returns all non-empty conversations."""

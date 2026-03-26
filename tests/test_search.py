@@ -55,6 +55,11 @@ class TestFTSSearch:
             """,
         ).fetchall()
         assert len(rows) >= 1
+        # BM25 scores are negative; ascending order = best match first (least negative)
+        ranks = [r[1] for r in rows]
+        assert ranks == sorted(ranks), "BM25 ranks should be in ascending order"
+        # Verify the search actually found bug-related content
+        assert any("bug" in r[0].lower() for r in rows)
 
     def test_search_no_results(self, db_path: Path):
         conn = sqlite3.connect(str(db_path))
