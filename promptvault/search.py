@@ -9,7 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from promptvault import __version__
@@ -88,6 +88,23 @@ def has_fzf() -> bool:
     return shutil.which("fzf") is not None
 
 
+def _clipboard_cmd() -> str | None:
+    """Detect the system clipboard copy command.
+
+    Priority: pbcopy (macOS) > wl-copy (Wayland) > xclip (X11) > xsel (X11 fallback).
+    Returns None if no clipboard tool is found.
+    """
+    if shutil.which("pbcopy"):
+        return "pbcopy"
+    if os.environ.get("WAYLAND_DISPLAY") and shutil.which("wl-copy"):
+        return "wl-copy"
+    if shutil.which("xclip"):
+        return "xclip -selection clipboard"
+    if shutil.which("xsel"):
+        return "xsel --clipboard --input"
+    return None
+
+
 def _fzf_version() -> tuple[int, ...]:
     """Parse fzf version. Returns (0, 0, 0) on failure."""
     try:
@@ -122,32 +139,65 @@ def _short_project(project: str) -> str:
     return name
 
 
-def _build_conversation_lines(conn: sqlite3.Connection, query: str | None = None) -> list[str]:
-    """Build conversation lines for fzf. Format: 'md_path\\tdate  Np  project  title'."""
+def _date_range_to_epoch_ms(preset: str) -> int:
+    """Convert a date range preset to a start-of-period epoch timestamp in ms.
+
+    Presets: 'today' (start of today), 'week' (7 days ago), 'month' (30 days ago).
+    """
+    now = datetime.now(tz=timezone.utc)
+    if preset == "today":
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif preset == "week":
+        start = (now - timedelta(days=7)).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif preset == "month":
+        start = (now - timedelta(days=30)).replace(hour=0, minute=0, second=0, microsecond=0)
+    else:
+        return 0
+    return int(start.timestamp() * 1000)
+
+
+def _build_conversation_lines(
+    conn: sqlite3.Connection,
+    query: str | None = None,
+    project: str | None = None,
+    date_range: str | None = None,
+) -> list[str]:
+    """Build conversation lines for fzf. Format: 'md_path\\tdate  Np  project  title'.
+
+    Optional filters:
+    - project: partial match on conversation project path
+    - date_range: 'today', 'week', or 'month' preset
+    """
     if query:
         # Find conversations that contain matching prompts
         session_ids = _fts_session_ids(conn, query)
         if not session_ids:
             return []
         placeholders = ",".join("?" * len(session_ids))
-        rows = conn.execute(
-            f"""
-            SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
-            FROM conversations
-            WHERE session_id IN ({placeholders})
-            ORDER BY start_ts DESC
-            """,
-            session_ids,
-        ).fetchall()
+        where = f"session_id IN ({placeholders})"
+        params: list = list(session_ids)
     else:
-        rows = conn.execute(
-            """
-            SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
-            FROM conversations
-            WHERE prompt_count > 0
-            ORDER BY start_ts DESC
-            """
-        ).fetchall()
+        where = "prompt_count > 0"
+        params = []
+
+    # Apply optional filters
+    if project:
+        where += " AND project LIKE ?"
+        params.append(f"%{project}%")
+    if date_range:
+        ts_ms = _date_range_to_epoch_ms(date_range)
+        where += " AND start_ts >= ?"
+        params.append(ts_ms)
+
+    rows = conn.execute(
+        f"""
+        SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
+        FROM conversations
+        WHERE {where}
+        ORDER BY start_ts DESC
+        """,
+        params,
+    ).fetchall()
 
     lines = []
     for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
@@ -156,6 +206,41 @@ def _build_conversation_lines(conn: sqlite3.Connection, query: str | None = None
         title = _short_title(display_name)
         # Field 1: md_path (hidden), Field 2: visible display, Field 3: full text (hidden, searchable)
         line = f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {title}"
+        lines.append(line)
+    return lines
+
+
+def _build_prompt_lines(conn: sqlite3.Connection, query: str | None = None) -> list[str]:
+    """Build individual prompt lines for fzf. Format: 'md_path\\tMM-DD HH:MM  project  prompt'.
+
+    If query is provided, uses FTS search for BM25-ranked results.
+    Otherwise returns recent prompts (excluding slash commands and image-only entries).
+    """
+    if query and query.strip():
+        # FTS search: join prompts_fts + prompts + conversations to get md_path
+        rows = _fts_search(conn, query, limit=500)
+    else:
+        # Recent prompts excluding slash commands and image-only entries
+        rows = conn.execute(
+            """
+            SELECT p.prompt_text, p.timestamp, p.project,
+                   COALESCE(c.display_name, c.name), c.md_path, 0 as rank
+            FROM prompts p
+            JOIN conversations c ON p.session_id = c.session_id
+            WHERE p.prompt_text NOT GLOB '/[a-z]*'
+              AND p.prompt_text NOT GLOB '[[]Image #[0-9]*[]]'
+              AND LENGTH(TRIM(p.prompt_text)) > 0
+            ORDER BY p.timestamp DESC
+            LIMIT 500
+            """,
+        ).fetchall()
+
+    lines = []
+    for prompt_text, ts, project, _conv_name, md_path, _rank in rows:
+        proj = _short_project(project)
+        date_str = ts_to_short(ts)
+        prompt_short = truncate(prompt_text, max_len=80)
+        line = f"{md_path}\t{date_str}  {proj:16s}  {prompt_short}"
         lines.append(line)
     return lines
 
@@ -223,15 +308,202 @@ def _fzf_preview_script(vault_dir: Path) -> str:
     )
 
 
-def _fzf_copy_script(vault_dir: Path) -> str:
-    """Shell command for ctrl-y: copy selected conversation's prompts to clipboard."""
-    return (
-        f"md_path=$(echo {{}} | cut -f1); "
-        f"file='{vault_dir}/'\"$md_path\"; "
-        f'if [ -f "$file" ]; then '
-        f"sed -n '/^## Prompt/,$p' \"$file\" | pbcopy; "
+def cmd_fzf_action(args: argparse.Namespace, db_path: Path) -> None:
+    """Hidden subcommand: handle copy/export actions from fzf.
+
+    Called by fzf's execute-silent (copy) or execute (export) bindings.
+    Reads selected items from a file, performs the action based on mode and view.
+    """
+    vault_dir = Path(os.environ.get("PROMPTVAULT_VAULT", str(DEFAULT_VAULT_DIR)))
+    action = args.action  # "copy" or "export"
+    view = args.view  # "conv" or "prompt"
+    items_file = args.items_file  # path to temp file with selected fzf lines
+
+    if not Path(items_file).exists():
+        return
+
+    lines = Path(items_file).read_text().strip().splitlines()
+    if not lines:
+        return
+
+    if view == "conv":
+        # Collect full conversation content
+        parts = []
+        for line in lines:
+            md_path = line.split("\t")[0]
+            full_path = vault_dir / md_path
+            if full_path.exists():
+                parts.append(full_path.read_text())
+        content = "\n---\n\n".join(parts)
+    else:
+        # Collect just the prompt text (field 2 from each line)
+        prompt_lines = []
+        for line in lines:
+            fields = line.split("\t")
+            if len(fields) >= 2:
+                prompt_lines.append(fields[1].strip())
+        content = "\n\n".join(prompt_lines)
+
+    if not content:
+        return
+
+    if action == "copy":
+        clip = _clipboard_cmd()
+        if clip is None:
+            print("No clipboard tool found", file=sys.stderr)
+            return
+        subprocess.run(clip.split(), input=content, text=True)
+    elif action == "export":
+        _export_with_save_dialog(content, len(lines))
+
+
+def _export_with_save_dialog(content: str, item_count: int) -> None:
+    """Export content with a native save dialog (macOS) or fallback to ~/Desktop."""
+    default_name = "promptvault-export.md"
+
+    # macOS: native save dialog via osascript
+    if sys.platform == "darwin":
+        script = (
+            f"set f to POSIX path of (choose file name with prompt "
+            f'"Export {item_count} conversation(s)" default name "{default_name}" '
+            f"default location (path to desktop folder))"
+        )
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                save_path = Path(result.stdout.strip())
+                save_path.write_text(content)
+                # Reveal in Finder
+                subprocess.run(["open", "-R", str(save_path)])
+                return
+            # User cancelled the dialog
+            return
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass  # Fall through to fallback
+
+    # Linux: try zenity
+    if shutil.which("zenity"):
+        try:
+            result = subprocess.run(
+                [
+                    "zenity",
+                    "--file-selection",
+                    "--save",
+                    "--filename",
+                    default_name,
+                    "--title",
+                    f"Export {item_count} conversation(s)",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                Path(result.stdout.strip()).write_text(content)
+                return
+            return
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    # Fallback: save to Desktop
+    fallback_path = Path.home() / "Desktop" / default_name
+    fallback_path.write_text(content)
+    if sys.platform == "darwin":
+        subprocess.run(["open", "-R", str(fallback_path)])
+
+
+def _build_transform_bindings(pv_bin: str, db_path: Path) -> list[str]:
+    """Build fzf --bind args for ctrl-t (mode), ctrl-p (project), ctrl-d (date) transforms."""
+    bindings: list[str] = []
+
+    # ctrl-t: toggle between conversation and prompt views
+    conv_reload = f"{pv_bin} --db {db_path} _fzf-lines {{q}}"
+    prompt_reload = f"{pv_bin} --db {db_path} _fzf-prompt-lines {{q}}"
+    ctrl_t_script = (
+        f'p="{{fzf:prompt}}"; '
+        f'if echo "$p" | grep -q "^prompt"; then '
+        f'echo "change-prompt(conv> )+reload({conv_reload} 2>/dev/null || true)'
+        f'+change-header(Conversations)"; '
+        f"else "
+        f'echo "change-prompt(prompt> )+reload({prompt_reload} 2>/dev/null || true)'
+        f'+change-header(Prompts)"; '
         f"fi"
     )
+    bindings.extend(["--bind", f"ctrl-t:transform:{ctrl_t_script}"])
+
+    # ctrl-p: cycle through project filters
+    with sqlite3.connect(str(db_path)) as proj_conn:
+        projects = [
+            r[0]
+            for r in proj_conn.execute(
+                "SELECT DISTINCT project FROM conversations "
+                "WHERE prompt_count > 0 AND project != '' ORDER BY project"
+            ).fetchall()
+        ]
+    if projects:
+        proj_names = [_short_project(p) for p in projects]
+        parts = []
+        reload_first = (
+            f"{pv_bin} --db {db_path} _fzf-lines --project {projects[0].split('/')[-1]} {{q}}"
+        )
+        # Use grep for robust prompt state detection
+        parts.append(
+            f'p="{{fzf:prompt}}"; '
+            f'if ! echo "$p" | grep -q "\\["; then '
+            f'echo "change-prompt(conv [{proj_names[0]}]> )'
+            f"+reload({reload_first} 2>/dev/null || true)"
+            f'+change-header({proj_names[0]})"; '
+        )
+        for i, (proj_path, pname) in enumerate(zip(projects, proj_names)):
+            if i < len(projects) - 1:
+                next_path = projects[i + 1]
+                next_name = proj_names[i + 1]
+                reload_next = (
+                    f"{pv_bin} --db {db_path} _fzf-lines --project {next_path.split('/')[-1]} {{q}}"
+                )
+                parts.append(
+                    f'elif echo "$p" | grep -q "{pname}"; then '
+                    f'echo "change-prompt(conv [{next_name}]> )'
+                    f"+reload({reload_next} 2>/dev/null || true)"
+                    f'+change-header({next_name})"; '
+                )
+        reload_all = f"{pv_bin} --db {db_path} _fzf-lines {{q}}"
+        parts.append(
+            f"else "
+            f'echo "change-prompt(conv> )'
+            f"+reload({reload_all} 2>/dev/null || true)"
+            f'+change-header(All)"; '
+        )
+        parts.append("fi")
+        bindings.extend(["--bind", f"ctrl-p:transform:{''.join(parts)}"])
+
+    # ctrl-d: cycle through date range presets (all → today → week → month → all)
+    # Use grep for robust prompt state detection (avoids bash regex escaping issues)
+    reload_base = f"{pv_bin} --db {db_path} _fzf-lines"
+    ctrl_d_script = (
+        f'p="{{fzf:prompt}}"; '
+        f'if echo "$p" | grep -q today; then '
+        f'echo "change-prompt(conv [week]> )+reload({reload_base} --date-range week {{q}} 2>/dev/null || true)'
+        f'+change-header(This week)"; '
+        f'elif echo "$p" | grep -q week; then '
+        f'echo "change-prompt(conv [month]> )+reload({reload_base} --date-range month {{q}} 2>/dev/null || true)'
+        f'+change-header(This month)"; '
+        f'elif echo "$p" | grep -q month; then '
+        f'echo "change-prompt(conv> )+reload({reload_base} {{q}} 2>/dev/null || true)'
+        f'+change-header(All)"; '
+        f"else "
+        f'echo "change-prompt(conv [today]> )+reload({reload_base} --date-range today {{q}} 2>/dev/null || true)'
+        f'+change-header(Today)"; '
+        f"fi"
+    )
+    bindings.extend(["--bind", f"ctrl-d:transform:{ctrl_d_script}"])
+
+    return bindings
 
 
 def _run_fzf(
@@ -270,16 +542,41 @@ def _run_fzf(
         "--layout=reverse",
         "--border=rounded",
         "--color=header:italic:dim,prompt:cyan,pointer:cyan,marker:green",
-        "--bind",
-        f"ctrl-y:execute-silent({_fzf_copy_script(vault_dir)})+bell",
-        "--bind",
-        "ctrl-/:toggle-preview",
-        # enter opens editor via execute() and returns to fzf afterward
-        "--bind",
-        f"enter:execute({os.environ.get('EDITOR', 'less')} {vault_dir}/{{1}})",
-        "--history",
-        str(output_dir / ".search_history"),
     ]
+
+    # Copy and export via hidden subcommand
+    # View detection: conv view exports full conversations, prompt view exports prompt text
+    # The subcommand reads {+f} (temp file with selected fzf lines)
+    pv_action = shutil.which("promptvault") or f"{sys.executable} -m promptvault.search"
+    action_db = db_path or DEFAULT_DB_PATH
+    action_base = f"{pv_action} --db {action_db} _fzf-action"
+
+    if _clipboard_cmd() is not None:
+        fzf_cmd.extend(
+            [
+                "--bind",
+                f"ctrl-y:execute-silent({action_base} --action copy --view conv --items-file {{+f}})+bell",
+            ]
+        )
+
+    fzf_cmd.extend(
+        [
+            "--bind",
+            f"ctrl-e:execute({action_base} --action export --view conv --items-file {{+f}})",
+        ]
+    )
+
+    fzf_cmd.extend(
+        [
+            "--bind",
+            "ctrl-/:toggle-preview",
+            # enter opens editor via execute() and returns to fzf afterward
+            "--bind",
+            f"enter:execute({os.environ.get('EDITOR', 'less')} {vault_dir}/{{1}})",
+            "--history",
+            str(output_dir / ".search_history"),
+        ]
+    )
 
     # Version-gated features: highlight-line, ghost text, footer, tmux popup
     if fzf_ver >= (0, 53, 0):
@@ -287,7 +584,16 @@ def _run_fzf(
     if fzf_ver >= (0, 54, 0):
         fzf_cmd.append("--ghost=Type to search prompts...")
     if fzf_ver >= (0, 53, 0):
-        fzf_cmd.append("--footer=enter open | ctrl-y copy | ctrl-/ preview | tab select | esc quit")
+        # Include transform keybindings in footer when features are active
+        footer_line1 = (
+            "enter open | ctrl-y copy | ctrl-e export | ctrl-/ preview | tab select | esc quit"
+        )
+        if db_path and fzf_ver >= (0, 45, 0):
+            footer_line2 = "ctrl-t mode | ctrl-p project | ctrl-d date"
+            base_footer = footer_line2 + "\n" + footer_line1
+        else:
+            base_footer = footer_line1
+        fzf_cmd.append(f"--footer={base_footer}")
     if os.environ.get("TMUX") and fzf_ver >= (0, 38, 0):
         fzf_cmd.extend(["--tmux", "center,80%,60%"])
 
@@ -302,6 +608,15 @@ def _run_fzf(
                 f"change:reload({reload_cmd} 2>/dev/null || true)",
             ]
         )
+
+        # Transform-based features require fzf >= 0.45.0 and a DB for reload
+        if fzf_ver >= (0, 45, 0):
+            for i, arg in enumerate(fzf_cmd):
+                if arg.startswith("--prompt="):
+                    fzf_cmd[i] = "--prompt=conv> "
+                    break
+
+            fzf_cmd.extend(_build_transform_bindings(pv_bin, db_path))
 
     if query:
         fzf_cmd.extend(["--query", query])
@@ -615,7 +930,24 @@ def build_parser() -> argparse.ArgumentParser:
 
     # hidden: used by fzf reload
     fzf_p = subparsers.add_parser("_fzf-lines")
+    fzf_p.add_argument("--project", default=None, help="Filter by project name")
+    fzf_p.add_argument(
+        "--date-range",
+        default=None,
+        choices=["today", "week", "month"],
+        help="Filter by date preset",
+    )
     fzf_p.add_argument("query", nargs="?", default=None)
+
+    # hidden: used by fzf reload in prompt mode
+    fzf_prompt_p = subparsers.add_parser("_fzf-prompt-lines")
+    fzf_prompt_p.add_argument("query", nargs="?", default=None)
+
+    # hidden: used by fzf copy/export actions
+    fzf_action_p = subparsers.add_parser("_fzf-action")
+    fzf_action_p.add_argument("--action", required=True, choices=["copy", "export"])
+    fzf_action_p.add_argument("--view", required=True, choices=["conv", "prompt"])
+    fzf_action_p.add_argument("--items-file", required=True)
 
     return parser
 
@@ -634,8 +966,21 @@ def main():
     if args.command == "_fzf-lines":
         conn = sqlite3.connect(str(db_path))
         q = args.query if args.query and args.query.strip() else None
-        lines = _build_conversation_lines(conn, q)
+        proj = getattr(args, "project", None)
+        dr = getattr(args, "date_range", None)
+        lines = _build_conversation_lines(conn, q, project=proj, date_range=dr)
         sys.stdout.write("\n".join(lines) + "\n" if lines else "")
+        return
+
+    if args.command == "_fzf-prompt-lines":
+        conn = sqlite3.connect(str(db_path))
+        q = args.query if args.query and args.query.strip() else None
+        lines = _build_prompt_lines(conn, q)
+        sys.stdout.write("\n".join(lines) + "\n" if lines else "")
+        return
+
+    if args.command == "_fzf-action":
+        cmd_fzf_action(args, db_path)
         return
 
     commands = {

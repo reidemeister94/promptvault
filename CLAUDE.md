@@ -5,7 +5,7 @@
 | **Language** | Python 3.10+, zero runtime deps |
 | **Entry points** | `promptvault` → `search:main`, `promptvault-sync` → `sync:main` |
 | **Source** | `promptvault/sync.py`, `promptvault/search.py`, `promptvault/hook.py` |
-| **Tests** | `tests/` — 190 tests, pytest, synthetic data only |
+| **Tests** | `tests/` — 296 tests, pytest, synthetic data only |
 | **Lint/Format** | ruff (line-length=100) |
 | **Python env** | `/opt/anaconda3/envs/promptvault` |
 

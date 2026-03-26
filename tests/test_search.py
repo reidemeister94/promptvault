@@ -10,6 +10,7 @@ import pytest
 from promptvault.sync import build_database, parse_history
 from promptvault.search import (
     _build_conversation_lines,
+    _build_prompt_lines,
     _fts_prepare_query,
     _fts_search,
     _short_project,
@@ -237,6 +238,62 @@ class TestShortTitle:
         result = _short_title("[Image #1] check this screenshot now please")
         assert "[Image" not in result
         assert len(result.split()) <= 4
+
+
+class TestBuildPromptLines:
+    def test_returns_lines_without_query(self, db_path: Path):
+        """No query → returns recent prompts with correct format."""
+        conn = sqlite3.connect(str(db_path))
+        lines = _build_prompt_lines(conn)
+        assert len(lines) >= 1
+        for line in lines:
+            parts = line.split("\t")
+            assert len(parts) == 2, f"Expected tab-separated md_path\\tvisible, got: {line!r}"
+            assert parts[0].endswith(".md")
+
+    def test_returns_lines_with_fts_query(self, db_path: Path):
+        """FTS query filters results to matching prompts."""
+        conn = sqlite3.connect(str(db_path))
+        lines = _build_prompt_lines(conn, "pytest")
+        assert len(lines) >= 1
+        # The visible part should contain something from the matched prompt
+        for line in lines:
+            parts = line.split("\t")
+            assert parts[0].endswith(".md")
+
+    def test_empty_query_returns_recent(self, db_path: Path):
+        """Empty string query → returns recent prompts (same as None)."""
+        conn = sqlite3.connect(str(db_path))
+        lines_none = _build_prompt_lines(conn)
+        lines_empty = _build_prompt_lines(conn, "")
+        # Both should return the same count (recent prompts)
+        assert len(lines_empty) == len(lines_none)
+
+    def test_excludes_slash_commands(self, db_path: Path):
+        """Slash commands like /help should not appear in prompt lines."""
+        conn = sqlite3.connect(str(db_path))
+        lines = _build_prompt_lines(conn)
+        for line in lines:
+            visible = line.split("\t")[1]
+            assert not visible.strip().endswith("/help")
+
+    def test_no_results_for_nonsense(self, db_path: Path):
+        """Nonsense query → empty list."""
+        conn = sqlite3.connect(str(db_path))
+        lines = _build_prompt_lines(conn, "xyznonexistent999")
+        assert lines == []
+
+    def test_line_format_contains_date_and_project(self, db_path: Path):
+        """Visible part should contain date (MM-DD HH:MM) and project info."""
+        conn = sqlite3.connect(str(db_path))
+        lines = _build_prompt_lines(conn)
+        assert len(lines) >= 1
+        # Check first line has date-like pattern in visible part
+        visible = lines[0].split("\t")[1]
+        # Should contain MM-DD HH:MM pattern
+        import re
+
+        assert re.search(r"\d{2}-\d{2} \d{2}:\d{2}", visible), f"No date pattern in: {visible!r}"
 
 
 class TestShortProject:

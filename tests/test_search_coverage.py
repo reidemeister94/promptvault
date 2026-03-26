@@ -21,9 +21,9 @@ import pytest
 
 from promptvault.search import (
     _auto_sync_if_stale,
+    _clipboard_cmd,
     _fts_search,
     _fts_session_ids,
-    _fzf_copy_script,
     _fzf_preview_script,
     _fzf_version,
     _run_fzf,
@@ -606,21 +606,9 @@ class TestFzfScripts:
         script = _fzf_preview_script(vault_dir)
         assert str(vault_dir) in script
 
-    def test_copy_script_contains_vault_dir(self, tmp_path):
-        """Copy script must embed the vault_dir path."""
-        vault_dir = tmp_path / "my_vault"
-        script = _fzf_copy_script(vault_dir)
-        assert str(vault_dir) in script
-
-    def test_copy_script_contains_pbcopy(self, tmp_path):
-        """Copy script must use pbcopy for clipboard integration."""
-        script = _fzf_copy_script(tmp_path / "vault")
-        assert "pbcopy" in script
-
-    def test_copy_script_contains_sed(self, tmp_path):
-        """Copy script uses sed to extract prompt sections before copying."""
-        script = _fzf_copy_script(tmp_path / "vault")
-        assert "sed" in script
+    def test_placeholder(self):
+        """Copy/export now handled by _fzf-action subcommand — see TestFzfAction."""
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -1305,3 +1293,485 @@ class TestPreviewScriptMetadata:
         """Preview script must output '---' separator line."""
         script = _fzf_preview_script(tmp_path / "vault")
         assert "echo '---'" in script
+
+
+# ---------------------------------------------------------------------------
+# _clipboard_cmd
+# ---------------------------------------------------------------------------
+
+
+class TestClipboardCmd:
+    def test_macos_pbcopy(self, monkeypatch):
+        """pbcopy available → returns 'pbcopy'."""
+        monkeypatch.setattr(
+            "promptvault.search.shutil.which",
+            lambda cmd: "/usr/bin/pbcopy" if cmd == "pbcopy" else None,
+        )
+        assert _clipboard_cmd() == "pbcopy"
+
+    def test_wayland_wl_copy(self, monkeypatch):
+        """wl-copy available + WAYLAND_DISPLAY set → returns 'wl-copy'."""
+        monkeypatch.setattr(
+            "promptvault.search.shutil.which",
+            lambda cmd: "/usr/bin/wl-copy" if cmd == "wl-copy" else None,
+        )
+        monkeypatch.setenv("WAYLAND_DISPLAY", "wayland-0")
+        assert _clipboard_cmd() == "wl-copy"
+
+    def test_xclip(self, monkeypatch):
+        """xclip available (no pbcopy, no wayland) → returns 'xclip -selection clipboard'."""
+        monkeypatch.setattr(
+            "promptvault.search.shutil.which",
+            lambda cmd: "/usr/bin/xclip" if cmd == "xclip" else None,
+        )
+        monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+        assert _clipboard_cmd() == "xclip -selection clipboard"
+
+    def test_xsel_fallback(self, monkeypatch):
+        """xsel available as last resort → returns 'xsel --clipboard --input'."""
+        monkeypatch.setattr(
+            "promptvault.search.shutil.which",
+            lambda cmd: "/usr/bin/xsel" if cmd == "xsel" else None,
+        )
+        monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+        assert _clipboard_cmd() == "xsel --clipboard --input"
+
+    def test_nothing_found(self, monkeypatch):
+        """No clipboard tool available → returns None."""
+        monkeypatch.setattr("promptvault.search.shutil.which", lambda cmd: None)
+        monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+        assert _clipboard_cmd() is None
+
+    def test_pbcopy_wins_over_xclip(self, monkeypatch):
+        """When both pbcopy and xclip exist, pbcopy takes priority."""
+        monkeypatch.setattr(
+            "promptvault.search.shutil.which",
+            lambda cmd: f"/usr/bin/{cmd}" if cmd in ("pbcopy", "xclip") else None,
+        )
+        assert _clipboard_cmd() == "pbcopy"
+
+    def test_wayland_skipped_without_display(self, monkeypatch):
+        """wl-copy available but WAYLAND_DISPLAY not set → skips to xclip/xsel."""
+        monkeypatch.setattr(
+            "promptvault.search.shutil.which",
+            lambda cmd: f"/usr/bin/{cmd}" if cmd in ("wl-copy", "xclip") else None,
+        )
+        monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+        assert _clipboard_cmd() == "xclip -selection clipboard"
+
+
+class TestRunFzfClipboardOmit:
+    """ctrl-y binding should be omitted when no clipboard tool is available."""
+
+    def _capture_fzf_cmd(self, monkeypatch, fzf_ver=(0, 70, 0)):
+        captured_cmd: list[str] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            result = MagicMock()
+            result.returncode = 1
+            result.stdout = ""
+            return result
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+        monkeypatch.setattr("promptvault.search._fzf_version", lambda: fzf_ver)
+        return captured_cmd
+
+    def test_ctrl_y_present_with_clipboard(self, populated_env, monkeypatch):
+        """ctrl-y binding present when clipboard tool is available."""
+        captured = self._capture_fzf_cmd(monkeypatch)
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert any("ctrl-y" in b for b in bind_args)
+
+    def test_ctrl_y_absent_without_clipboard(self, populated_env, monkeypatch):
+        """ctrl-y binding absent when no clipboard tool is available."""
+        captured = self._capture_fzf_cmd(monkeypatch)
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: None)
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert not any("ctrl-y" in b for b in bind_args)
+
+
+# ---------------------------------------------------------------------------
+# _fzf-prompt-lines hidden subcommand
+# ---------------------------------------------------------------------------
+
+
+class TestTransformBindings:
+    """Test transform bindings (ctrl-t, ctrl-p, ctrl-d) in _run_fzf."""
+
+    def _capture_fzf_cmd(self, monkeypatch, fzf_ver=(0, 70, 0)):
+        captured_cmd: list[str] = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            result = MagicMock()
+            result.returncode = 1
+            result.stdout = ""
+            return result
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+        monkeypatch.setattr("promptvault.search._fzf_version", lambda: fzf_ver)
+        return captured_cmd
+
+    def test_ctrl_t_present_with_new_fzf_and_db(self, populated_env, monkeypatch):
+        """ctrl-t transform binding present when fzf >= 0.45.0 and db_path provided."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 45, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert any("ctrl-t:transform" in b for b in bind_args), (
+            f"ctrl-t:transform not found in bindings: {bind_args}"
+        )
+
+    def test_ctrl_t_absent_with_old_fzf(self, populated_env, monkeypatch):
+        """ctrl-t transform binding absent when fzf < 0.45.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 44, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert not any("ctrl-t:transform" in b for b in bind_args)
+
+    def test_ctrl_t_absent_without_db(self, populated_env, monkeypatch):
+        """ctrl-t transform binding absent when no db_path (no reload possible)."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 70, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert not any("ctrl-t:transform" in b for b in bind_args)
+
+    def test_ctrl_t_references_prompt_lines(self, populated_env, monkeypatch):
+        """ctrl-t transform script references _fzf-prompt-lines for prompt mode."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 45, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        ctrl_t = [b for b in bind_args if "ctrl-t:transform" in b]
+        assert len(ctrl_t) == 1
+        assert "_fzf-prompt-lines" in ctrl_t[0]
+        assert "_fzf-lines" in ctrl_t[0]
+
+    def test_default_prompt_is_conv(self, populated_env, monkeypatch):
+        """Default prompt should be 'conv> ' when db_path and fzf >= 0.45.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 45, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        prompt_args = [arg for arg in captured if arg.startswith("--prompt=")]
+        assert any("conv> " in p for p in prompt_args)
+
+    def test_ctrl_p_present_with_projects(self, populated_env, monkeypatch):
+        """ctrl-p transform binding present when projects exist in DB."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 45, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert any("ctrl-p:transform" in b for b in bind_args), (
+            f"ctrl-p:transform not found in bindings: {bind_args}"
+        )
+
+    def test_ctrl_p_absent_with_old_fzf(self, populated_env, monkeypatch):
+        """ctrl-p transform binding absent when fzf < 0.45.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 44, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert not any("ctrl-p:transform" in b for b in bind_args)
+
+    def test_ctrl_p_cycles_through_projects(self, populated_env, monkeypatch):
+        """ctrl-p transform script references project names from DB."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 45, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        ctrl_p = [b for b in bind_args if "ctrl-p:transform" in b]
+        assert len(ctrl_p) == 1
+        # Should reference --project flag for filtering
+        assert "--project" in ctrl_p[0]
+
+    def test_ctrl_d_present_with_new_fzf_and_db(self, populated_env, monkeypatch):
+        """ctrl-d transform binding present when fzf >= 0.45.0 and db_path provided."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 45, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert any("ctrl-d:transform" in b for b in bind_args), (
+            f"ctrl-d:transform not found in bindings: {bind_args}"
+        )
+
+    def test_ctrl_d_absent_with_old_fzf(self, populated_env, monkeypatch):
+        """ctrl-d transform binding absent when fzf < 0.45.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 44, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert not any("ctrl-d:transform" in b for b in bind_args)
+
+    def test_ctrl_d_cycles_date_ranges(self, populated_env, monkeypatch):
+        """ctrl-d transform script references date range presets."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 45, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        ctrl_d = [b for b in bind_args if "ctrl-d:transform" in b]
+        assert len(ctrl_d) == 1
+        # Should reference today, week, month
+        assert "today" in ctrl_d[0]
+        assert "week" in ctrl_d[0]
+        assert "month" in ctrl_d[0]
+
+    def test_footer_includes_new_keybindings(self, populated_env, monkeypatch):
+        """Footer includes ctrl-t, ctrl-p, ctrl-d when fzf >= 0.53.0 and db_path provided."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 53, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(
+            ["a.md\ttest line"],
+            populated_env["vault_dir"],
+            db_path=populated_env["db_path"],
+        )
+        footer_args = [arg for arg in captured if arg.startswith("--footer=")]
+        assert len(footer_args) >= 1
+        footer = footer_args[0]
+        assert "ctrl-t" in footer
+        assert "ctrl-p" in footer
+        assert "ctrl-d" in footer
+
+    def test_footer_no_new_keybindings_without_db(self, populated_env, monkeypatch):
+        """Footer should NOT include ctrl-t/p/d when no db_path (no transform features)."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 53, 0))
+        monkeypatch.setattr("promptvault.search._clipboard_cmd", lambda: "pbcopy")
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        footer_args = [arg for arg in captured if arg.startswith("--footer=")]
+        assert len(footer_args) >= 1
+        footer = footer_args[0]
+        assert "ctrl-t" not in footer
+
+
+class TestFzfLinesWithFilters:
+    """Test _fzf-lines --project and --date-range flags."""
+
+    def test_project_filter(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines --project alpha filters to project-alpha conversations only."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "promptvault",
+                "--db",
+                str(populated_env["db_path"]),
+                "_fzf-lines",
+                "--project",
+                "alpha",
+            ],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        assert len(lines) == 1  # only sess-a1 is in project-alpha
+
+    def test_project_filter_no_match(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines --project nonexistent returns empty output."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "promptvault",
+                "--db",
+                str(populated_env["db_path"]),
+                "_fzf-lines",
+                "--project",
+                "nonexistent",
+            ],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        assert out.strip() == ""
+
+    def test_date_range_today(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines --date-range today filters to conversations from today (likely empty with test data)."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "promptvault",
+                "--db",
+                str(populated_env["db_path"]),
+                "_fzf-lines",
+                "--date-range",
+                "today",
+            ],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        # Test data is from 2023 — "today" filter should return nothing
+        assert out.strip() == ""
+
+    def test_date_range_month_with_old_data(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines --date-range month with old test data returns empty."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "promptvault",
+                "--db",
+                str(populated_env["db_path"]),
+                "_fzf-lines",
+                "--date-range",
+                "month",
+            ],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        # Test data from 2023 — month filter for current month returns nothing
+        assert out.strip() == ""
+
+    def test_project_with_query(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines --project alpha docker → intersection of project filter and FTS query."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "promptvault",
+                "--db",
+                str(populated_env["db_path"]),
+                "_fzf-lines",
+                "--project",
+                "alpha",
+                "docker",
+            ],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        assert len(lines) >= 1  # docker is in project-alpha
+
+
+class TestMainFzfPromptLines:
+    """Test the _fzf-prompt-lines hidden command in-process."""
+
+    def test_no_query_outputs_prompts(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-prompt-lines without query writes recent prompts to stdout."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["promptvault", "--db", str(populated_env["db_path"]), "_fzf-prompt-lines"],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        assert len(lines) >= 1
+        for line in lines:
+            assert "\t" in line
+            assert line.split("\t")[0].endswith(".md")
+
+    def test_with_query_filters(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-prompt-lines with query returns only matching prompts."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "promptvault",
+                "--db",
+                str(populated_env["db_path"]),
+                "_fzf-prompt-lines",
+                "docker",
+            ],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        assert len(lines) >= 1
+
+    def test_empty_query_returns_all(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-prompt-lines with empty string returns all recent prompts."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["promptvault", "--db", str(populated_env["db_path"]), "_fzf-prompt-lines", ""],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        # Should have prompts (excluding slash commands)
+        assert len(lines) >= 1

@@ -41,6 +41,9 @@ pipx install promptvault-py
 pv-sync                        # sync your Claude Code history
 pv                             # browse conversations
 pv search "database migration" # full-text search
+
+# upgrade to latest version
+uv tool upgrade promptvault-py   # or: pipx upgrade promptvault-py
 ```
 
 > Don't have uv? `curl -LsSf https://astral.sh/uv/install.sh | sh` ([docs](https://docs.astral.sh/uv/getting-started/installation/))
@@ -83,7 +86,21 @@ All commands launch **fzf** by default (split pane: conversation list + live pre
 | `pv stats` | Vault overview |
 | `pv-sync` | Rebuild vault + database |
 
-**Controls:** `Up/Down` navigate, `Enter` opens in `$EDITOR`, `Ctrl-Y` copies, `Esc` quits
+**Controls:**
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Open in `$EDITOR` (returns to fzf) |
+| `Ctrl-T` | Toggle conversation / prompt view |
+| `Ctrl-P` | Cycle project filter |
+| `Ctrl-D` | Cycle date range (all/today/week/month) |
+| `Ctrl-Y` | Copy to clipboard (view-aware) |
+| `Ctrl-E` | Export to file (view-aware) |
+| `Ctrl-/` | Toggle preview |
+| `Tab` | Multi-select |
+| `Esc` | Quit |
+
+> Full documentation: [docs/usage.md](docs/usage.md)
 
 ---
 
@@ -145,7 +162,7 @@ Open as an Obsidian vault. The Calendar plugin works well for browsing.
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md). 187 tests, all synthetic data.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md). 296 tests, all synthetic data.
 
 ```bash
 git clone https://github.com/reidemeister94/promptvault.git
