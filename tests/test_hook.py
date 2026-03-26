@@ -1,7 +1,8 @@
-"""Tests for promptvault.hook module."""
+"""Tests for promptvault.hook module — in-process for coverage."""
 
 from __future__ import annotations
 
+import io
 import json
 import os
 import subprocess
@@ -9,77 +10,113 @@ import sys
 from pathlib import Path
 
 
-class TestHookScript:
-    def test_appends_to_capture_log(self, tmp_path: Path):
-        """Hook should append a JSON line to capture.jsonl."""
+class TestHookInProcess:
+    """Call hook.main() in-process so coverage tracks the lines."""
+
+    def test_appends_to_capture_log(self, tmp_path, monkeypatch):
         log_path = tmp_path / "capture.jsonl"
-        hook_script = Path(__file__).parent.parent / "promptvault" / "hook.py"
+        monkeypatch.setenv("PROMPTVAULT_CAPTURE_LOG", str(log_path))
 
         input_data = json.dumps(
             {
                 "session_id": "test-session-123",
-                "transcript_path": "/tmp/transcript",
-                "cwd": "/Users/test",
-                "permission_mode": "default",
-                "hook_event_name": "UserPromptSubmit",
                 "prompt": "explain this code",
+                "cwd": "/Users/test",
             }
         )
+        monkeypatch.setattr("sys.stdin", io.StringIO(input_data))
 
-        result = subprocess.run(
-            [sys.executable, str(hook_script)],
-            input=input_data,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "PROMPTVAULT_CAPTURE_LOG": str(log_path)},
-        )
+        from promptvault.hook import main
 
-        assert result.returncode == 0
-        assert result.stdout == ""  # must be silent
+        main()
 
         assert log_path.exists()
         entry = json.loads(log_path.read_text().strip())
         assert entry["prompt"] == "explain this code"
         assert entry["session_id"] == "test-session-123"
         assert entry["cwd"] == "/Users/test"
-        assert "timestamp" in entry
+        assert isinstance(entry["timestamp"], int)
+        assert entry["timestamp"] > 0
 
-    def test_silent_on_invalid_input(self, tmp_path: Path):
-        """Hook should not crash or produce output on invalid input."""
+    def test_silent_on_invalid_json(self, tmp_path, monkeypatch):
+        log_path = tmp_path / "capture.jsonl"
+        monkeypatch.setenv("PROMPTVAULT_CAPTURE_LOG", str(log_path))
+        monkeypatch.setattr("sys.stdin", io.StringIO("not valid json"))
+
+        from promptvault.hook import main
+
+        # Must not raise — the except Exception: pass catches it
+        main()
+        assert not log_path.exists()
+
+    def test_appends_multiple_entries(self, tmp_path, monkeypatch):
+        log_path = tmp_path / "capture.jsonl"
+        monkeypatch.setenv("PROMPTVAULT_CAPTURE_LOG", str(log_path))
+
+        from promptvault.hook import main
+
+        for i in range(3):
+            monkeypatch.setattr(
+                "sys.stdin",
+                io.StringIO(
+                    json.dumps({"prompt": f"prompt {i}", "session_id": f"s{i}", "cwd": "/"})
+                ),
+            )
+            main()
+
+        lines = log_path.read_text().strip().split("\n")
+        assert len(lines) == 3
+        for i, line in enumerate(lines):
+            entry = json.loads(line)
+            assert entry["prompt"] == f"prompt {i}"
+            assert entry["session_id"] == f"s{i}"
+
+    def test_missing_fields_default_to_empty(self, tmp_path, monkeypatch):
+        log_path = tmp_path / "capture.jsonl"
+        monkeypatch.setenv("PROMPTVAULT_CAPTURE_LOG", str(log_path))
+        monkeypatch.setattr("sys.stdin", io.StringIO("{}"))
+
+        from promptvault.hook import main
+
+        main()
+
+        entry = json.loads(log_path.read_text().strip())
+        assert entry["prompt"] == ""
+        assert entry["session_id"] == ""
+        assert entry["cwd"] == ""
+
+    def test_creates_parent_directory(self, tmp_path, monkeypatch):
+        log_path = tmp_path / "nested" / "deep" / "capture.jsonl"
+        monkeypatch.setenv("PROMPTVAULT_CAPTURE_LOG", str(log_path))
+        monkeypatch.setattr(
+            "sys.stdin",
+            io.StringIO(json.dumps({"prompt": "hello"})),
+        )
+
+        from promptvault.hook import main
+
+        main()
+
+        assert log_path.exists()
+        assert "hello" in log_path.read_text()
+
+
+class TestHookSubprocess:
+    """Subprocess tests verify the script works as a standalone executable."""
+
+    def test_end_to_end(self, tmp_path):
+        log_path = tmp_path / "capture.jsonl"
         hook_script = Path(__file__).parent.parent / "promptvault" / "hook.py"
 
         result = subprocess.run(
             [sys.executable, str(hook_script)],
-            input="not valid json",
+            input=json.dumps({"prompt": "e2e test", "session_id": "s1", "cwd": "/tmp"}),
             capture_output=True,
             text=True,
-            env={**os.environ, "PROMPTVAULT_CAPTURE_LOG": str(tmp_path / "capture.jsonl")},
+            env={**os.environ, "PROMPTVAULT_CAPTURE_LOG": str(log_path)},
         )
 
         assert result.returncode == 0
         assert result.stdout == ""
-
-    def test_appends_multiple_entries(self, tmp_path: Path):
-        """Hook should append (not overwrite) on multiple calls."""
-        log_path = tmp_path / "capture.jsonl"
-        hook_script = Path(__file__).parent.parent / "promptvault" / "hook.py"
-
-        for i in range(3):
-            input_data = json.dumps(
-                {
-                    "session_id": f"session-{i}",
-                    "prompt": f"prompt number {i}",
-                    "cwd": "/tmp",
-                    "hook_event_name": "UserPromptSubmit",
-                }
-            )
-            subprocess.run(
-                [sys.executable, str(hook_script)],
-                input=input_data,
-                capture_output=True,
-                text=True,
-                env={**os.environ, "PROMPTVAULT_CAPTURE_LOG": str(log_path)},
-            )
-
-        lines = log_path.read_text().strip().split("\n")
-        assert len(lines) == 3
+        entry = json.loads(log_path.read_text().strip())
+        assert entry["prompt"] == "e2e test"

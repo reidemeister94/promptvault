@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from promptvault.sync import (
+    _resolve_paste_content,
     build_database,
     generate_index,
     generate_vault,
@@ -26,6 +28,23 @@ class TestParseHistory:
         assert len(sessions["aaaa-1111-2222-3333"]) == 3
         assert len(sessions["bbbb-4444-5555-6666"]) == 2
         assert len(sessions["cccc-7777-8888-9999"]) == 1
+
+    def test_blank_lines_in_jsonl_are_skipped(self, tmp_path: Path):
+        """Empty/blank lines in history.jsonl must be silently skipped."""
+        history = tmp_path / "history.jsonl"
+        entry = json.dumps(
+            {
+                "display": "hello",
+                "pastedContents": {},
+                "timestamp": 1700000000000,
+                "project": "/test",
+                "sessionId": "sess-blank",
+            }
+        )
+        history.write_text(f"\n\n{entry}\n\n\n")
+        sessions = parse_history(history)
+        assert len(sessions) == 1
+        assert len(sessions["sess-blank"]) == 1
 
     def test_prompts_sorted_by_timestamp(self, tmp_history: Path):
         sessions = parse_history(tmp_history)
@@ -132,6 +151,16 @@ class TestResolvePastedContent:
         result = resolve_pasted_content(entry, paste_cache_dir=cache_dir)
         assert "inline version" in result
         assert "cached version" not in result
+
+    def test_non_dict_paste_info_is_skipped(self, tmp_path: Path):
+        """When pastedContents value is not a dict (e.g. a string), it is skipped."""
+        entry = {
+            "display": "[Pasted text #1] check this",
+            "pastedContents": {"1": "not a dict"},
+        }
+        result = resolve_pasted_content(entry, paste_cache_dir=tmp_path)
+        assert "[Pasted text #1]" in result
+        assert "check this" in result
 
 
 class TestSlugify:
@@ -273,3 +302,52 @@ class TestBuildDatabase:
         conn = sqlite3.connect(str(db_path))
         count = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
         assert count == 4
+
+
+class TestResolvePasteContent:
+    """Unit tests for the low-level _resolve_paste_content helper."""
+
+    def test_whitespace_only_content_returns_empty(self, tmp_path: Path):
+        """Whitespace-only content is truthy, so if-branch runs, but strip() yields ''."""
+        cache_dir = tmp_path / "paste-cache"
+        cache_dir.mkdir()
+        result = _resolve_paste_content({"content": " "}, cache_dir)
+        assert result == ""
+
+    def test_empty_content_hash_returns_empty(self, tmp_path: Path):
+        """Empty contentHash is falsy — falls through to return ''."""
+        cache_dir = tmp_path / "paste-cache"
+        cache_dir.mkdir()
+        result = _resolve_paste_content({"contentHash": ""}, cache_dir)
+        assert result == ""
+
+    def test_missing_both_fields_returns_empty(self, tmp_path: Path):
+        """Neither content nor contentHash present — returns ''."""
+        cache_dir = tmp_path / "paste-cache"
+        cache_dir.mkdir()
+        result = _resolve_paste_content({}, cache_dir)
+        assert result == ""
+
+    def test_unreadable_cache_file_returns_empty(self, tmp_path: Path, monkeypatch):
+        """OSError when reading cache file must be swallowed, returning ''."""
+        cache_dir = tmp_path / "paste-cache"
+        cache_dir.mkdir()
+        cache_file = cache_dir / "deadbeef.txt"
+        cache_file.write_text("some content")
+
+        # Simulate a file that exists but cannot be read (e.g. permission denied).
+        def raise_os_error(*args, **kwargs):
+            raise OSError("permission denied")
+
+        monkeypatch.setattr(cache_file.__class__, "read_text", raise_os_error)
+
+        result = _resolve_paste_content({"contentHash": "deadbeef"}, cache_dir)
+        assert result == ""
+
+    def test_none_content_falls_through_to_hash(self, tmp_path: Path):
+        """None content is falsy — falls through to contentHash lookup."""
+        cache_dir = tmp_path / "paste-cache"
+        cache_dir.mkdir()
+        (cache_dir / "abc123.txt").write_text("from cache")
+        result = _resolve_paste_content({"content": None, "contentHash": "abc123"}, cache_dir)
+        assert result == "from cache"

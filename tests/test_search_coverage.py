@@ -21,12 +21,19 @@ import pytest
 
 from promptvault.search import (
     _auto_sync_if_stale,
+    _fts_search,
     _fts_session_ids,
+    _fzf_copy_script,
+    _fzf_preview_script,
+    _run_fzf,
     build_parser,
     cmd_list,
     cmd_recent,
     cmd_search,
     cmd_search_interactive,
+    get_db,
+    ts_to_short,
+    ts_to_str,
 )
 from promptvault.sync import build_database, generate_vault, parse_history
 
@@ -122,6 +129,7 @@ class TestAutoSyncIfStale:
             _auto_sync_if_stale(db_path)
 
         mock_sync.assert_not_called()
+        assert mock_sync.call_count == 0
 
     def test_no_db_triggers_sync(self, tmp_path, monkeypatch):
         """When history exists but DB does not, sync must run."""
@@ -140,6 +148,8 @@ class TestAutoSyncIfStale:
         _auto_sync_if_stale(db_path)
 
         fake_sync.assert_called_once_with(quiet=True)
+        assert fake_sync.call_count == 1
+        assert fake_sync.call_args == ((), {"quiet": True})
 
     def test_history_newer_than_db_triggers_sync(self, tmp_path, monkeypatch):
         """When history mtime > db mtime, sync must run."""
@@ -165,6 +175,8 @@ class TestAutoSyncIfStale:
         _auto_sync_if_stale(db)
 
         fake_sync.assert_called_once_with(quiet=True)
+        assert fake_sync.call_count == 1
+        assert fake_sync.call_args == ((), {"quiet": True})
 
     def test_db_newer_than_history_skips_sync(self, tmp_path, monkeypatch):
         """When db mtime >= history mtime, sync must NOT run."""
@@ -190,6 +202,7 @@ class TestAutoSyncIfStale:
         _auto_sync_if_stale(db)
 
         fake_sync.assert_not_called()
+        assert fake_sync.call_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -495,3 +508,620 @@ class TestMainDispatch:
         main()
         out = capsys.readouterr().out
         assert "Last" in out and "prompts:" in out
+
+
+# ---------------------------------------------------------------------------
+# ts_to_str / ts_to_short
+# ---------------------------------------------------------------------------
+
+
+class TestTimestampFormatters:
+    @pytest.mark.parametrize(
+        "ts_ms, expected",
+        [
+            (1700000000000, "2023-11-14 22:13"),  # known reference timestamp
+            (0, "1970-01-01 00:00"),  # Unix epoch
+            (1609459200000, "2021-01-01 00:00"),  # new year 2021
+        ],
+    )
+    def test_ts_to_str(self, ts_ms, expected):
+        assert ts_to_str(ts_ms) == expected
+
+    @pytest.mark.parametrize(
+        "ts_ms, expected",
+        [
+            (1700000000000, "11-14 22:13"),  # same reference — no year
+            (0, "01-01 00:00"),  # epoch without year
+        ],
+    )
+    def test_ts_to_short(self, ts_ms, expected):
+        assert ts_to_short(ts_ms) == expected
+
+
+# ---------------------------------------------------------------------------
+# get_db
+# ---------------------------------------------------------------------------
+
+
+class TestGetDb:
+    def test_existing_db_returns_connection(self, populated_env):
+        """When db_path exists, get_db returns a live sqlite3 connection."""
+        # The autouse fixture prevents real sync by pointing PROMPTVAULT_HISTORY to a missing file.
+        conn = get_db(populated_env["db_path"])
+        assert isinstance(conn, sqlite3.Connection)
+        # Verify the connection is usable
+        result = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()
+        assert result[0] >= 0
+        conn.close()
+
+    def test_missing_db_exits_with_error(self, tmp_path, capsys):
+        """When db_path does not exist, get_db prints an error to stderr and exits."""
+        missing = tmp_path / "nonexistent.db"
+        with pytest.raises(SystemExit) as exc_info:
+            get_db(missing)
+        assert exc_info.value.code != 0
+        err = capsys.readouterr().err
+        assert "database not found" in err.lower() or "promptvault-sync" in err
+
+    def test_auto_sync_called(self, populated_env, monkeypatch):
+        """get_db must call _auto_sync_if_stale before opening the connection."""
+        calls = []
+
+        def fake_auto_sync(db_path):
+            calls.append(db_path)
+
+        monkeypatch.setattr("promptvault.search._auto_sync_if_stale", fake_auto_sync)
+        conn = get_db(populated_env["db_path"])
+        conn.close()
+        assert calls == [populated_env["db_path"]]
+
+
+# ---------------------------------------------------------------------------
+# _fzf_preview_script / _fzf_copy_script
+# ---------------------------------------------------------------------------
+
+
+class TestFzfScripts:
+    def test_preview_script_contains_vault_dir(self, tmp_path):
+        """Preview script must embed the vault_dir path."""
+        vault_dir = tmp_path / "my_vault"
+        script = _fzf_preview_script(vault_dir)
+        assert str(vault_dir) in script
+
+    def test_preview_script_contains_query_placeholder(self, tmp_path):
+        """{q} placeholder must appear so fzf can inject the live query."""
+        script = _fzf_preview_script(tmp_path / "vault")
+        assert "{q}" in script
+
+    def test_preview_script_contains_sed_and_grep(self, tmp_path):
+        """Preview script uses sed to extract prompt sections and grep for highlighting."""
+        script = _fzf_preview_script(tmp_path / "vault")
+        assert "sed" in script
+        assert "grep" in script
+
+    def test_preview_script_handles_spaces_in_path(self, tmp_path):
+        """vault_dir with spaces must still appear correctly embedded in the script."""
+        vault_dir = tmp_path / "my vault with spaces"
+        script = _fzf_preview_script(vault_dir)
+        assert str(vault_dir) in script
+
+    def test_copy_script_contains_vault_dir(self, tmp_path):
+        """Copy script must embed the vault_dir path."""
+        vault_dir = tmp_path / "my_vault"
+        script = _fzf_copy_script(vault_dir)
+        assert str(vault_dir) in script
+
+    def test_copy_script_contains_pbcopy(self, tmp_path):
+        """Copy script must use pbcopy for clipboard integration."""
+        script = _fzf_copy_script(tmp_path / "vault")
+        assert "pbcopy" in script
+
+    def test_copy_script_contains_sed(self, tmp_path):
+        """Copy script uses sed to extract prompt sections before copying."""
+        script = _fzf_copy_script(tmp_path / "vault")
+        assert "sed" in script
+
+
+# ---------------------------------------------------------------------------
+# _run_fzf
+# ---------------------------------------------------------------------------
+
+
+class TestRunFzf:
+    """Tests for _run_fzf subprocess orchestration. All subprocess.run calls mocked."""
+
+    def _make_lines(self, populated_env):
+        """Build a minimal valid lines list using a real vault md_path."""
+        conn = sqlite3.connect(str(populated_env["db_path"]))
+        rows = conn.execute(
+            "SELECT md_path FROM conversations WHERE prompt_count > 0 LIMIT 1"
+        ).fetchall()
+        conn.close()
+        assert rows, "populated_env must have at least one conversation"
+        md_path = rows[0][0]
+        return [f"{md_path}\t11-14 22:13   2p  project-alpha    explain docker"], md_path
+
+    def test_returncode_0_with_md_path_opens_editor(self, populated_env, monkeypatch):
+        """rc=0 + valid md_path → editor (EDITOR env var) is invoked with the full path."""
+        lines, md_path = self._make_lines(populated_env)
+        vault_dir = populated_env["vault_dir"]
+        full_path = vault_dir / md_path
+
+        fzf_result = MagicMock()
+        fzf_result.returncode = 0
+        fzf_result.stdout = f"{md_path}\t11-14 22:13   2p  project-alpha    explain docker\n"
+
+        editor_calls = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "fzf":
+                return fzf_result
+            # second call is the editor
+            editor_calls.append(cmd)
+            return MagicMock(returncode=0)
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+        monkeypatch.setenv("EDITOR", "nano")
+
+        _run_fzf(lines, vault_dir)
+
+        assert len(editor_calls) == 1
+        assert editor_calls[0][0] == "nano"
+        assert editor_calls[0][1] == str(full_path)
+
+    def test_returncode_0_file_missing_prints_not_found(self, populated_env, monkeypatch, capsys):
+        """rc=0 + md_path pointing to nonexistent file → prints 'File not found'."""
+        vault_dir = populated_env["vault_dir"]
+        fake_md_path = "nonexistent/session.md"
+
+        fzf_result = MagicMock()
+        fzf_result.returncode = 0
+        fzf_result.stdout = f"{fake_md_path}\tsome visible text\n"
+
+        monkeypatch.setattr(
+            "promptvault.search.subprocess.run",
+            lambda cmd, **kwargs: fzf_result,
+        )
+
+        _run_fzf([f"{fake_md_path}\tsome visible text"], vault_dir)
+
+        out = capsys.readouterr().out
+        assert "File not found" in out
+
+    def test_nonzero_returncode_does_nothing(self, populated_env, monkeypatch, capsys):
+        """rc != 0 (e.g. user pressed Esc) → no output, no editor invocation."""
+        vault_dir = populated_env["vault_dir"]
+
+        fzf_result = MagicMock()
+        fzf_result.returncode = 130  # typical Esc/Ctrl-C code
+        fzf_result.stdout = ""
+
+        editor_calls = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd[0] == "fzf":
+                return fzf_result
+            editor_calls.append(cmd)
+            return MagicMock(returncode=0)
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+
+        _run_fzf(["some_path.md\tsome visible text"], vault_dir)
+
+        assert editor_calls == []
+        out, err = capsys.readouterr()
+        assert out == ""
+
+    def test_file_not_found_error_exits(self, populated_env, monkeypatch, capsys):
+        """FileNotFoundError (fzf not installed) → prints to stderr and sys.exit(1)."""
+        vault_dir = populated_env["vault_dir"]
+
+        def raise_fnf(cmd, **kwargs):
+            raise FileNotFoundError("fzf not found")
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", raise_fnf)
+
+        with pytest.raises(SystemExit) as exc_info:
+            _run_fzf(["some_path.md\tsome visible text"], vault_dir)
+
+        assert exc_info.value.code == 1
+        err = capsys.readouterr().err
+        assert "fzf" in err.lower()
+
+    def test_db_path_adds_disabled_and_reload_binding(self, populated_env, monkeypatch):
+        """When db_path is provided, fzf command includes --disabled and change:reload."""
+        vault_dir = populated_env["vault_dir"]
+        db_path = populated_env["db_path"]
+
+        captured_cmd = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            result = MagicMock()
+            result.returncode = 1  # simulate Esc so no editor is invoked
+            result.stdout = ""
+            return result
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+
+        _run_fzf(["some_path.md\tsome visible text"], vault_dir, db_path=db_path)
+
+        assert "--disabled" in captured_cmd
+        # The change:reload binding must reference the db path
+        bind_indices = [i for i, v in enumerate(captured_cmd) if v.startswith("change:reload")]
+        assert len(bind_indices) >= 1
+        assert str(db_path) in captured_cmd[bind_indices[0]]
+
+    def test_query_adds_query_flag(self, populated_env, monkeypatch):
+        """When query is provided, fzf command includes --query <value>."""
+        vault_dir = populated_env["vault_dir"]
+
+        captured_cmd = []
+
+        def fake_subprocess_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            result = MagicMock()
+            result.returncode = 1
+            result.stdout = ""
+            return result
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+
+        _run_fzf(["some_path.md\tsome visible text"], vault_dir, query="docker")
+
+        assert "--query" in captured_cmd
+        query_idx = captured_cmd.index("--query")
+        assert captured_cmd[query_idx + 1] == "docker"
+
+
+# ---------------------------------------------------------------------------
+# cmd_recent fzf branch
+# ---------------------------------------------------------------------------
+
+
+class TestCmdRecentFzfBranch:
+    def test_fzf_branch_calls_run_fzf_with_tab_separated_lines(self, populated_env, monkeypatch):
+        """When fzf is available and stdout is a tty, cmd_recent calls _run_fzf with
+        lines containing at least 3 tab-separated fields (md_path, visible, full title)."""
+        captured = {}
+
+        def fake_run_fzf(lines, vault_dir, **kwargs):
+            captured["lines"] = lines
+            captured["vault_dir"] = vault_dir
+
+        monkeypatch.setattr("promptvault.search._run_fzf", fake_run_fzf)
+        monkeypatch.setattr("promptvault.search.has_fzf", lambda: True)
+        monkeypatch.setattr("promptvault.search.sys.stdout", MagicMock(isatty=lambda: True))
+        monkeypatch.setenv("PROMPTVAULT_VAULT", str(populated_env["vault_dir"]))
+
+        args = build_parser().parse_args(["recent", "10"])
+        cmd_recent(args, populated_env["db_path"])
+
+        assert "lines" in captured
+        assert len(captured["lines"]) >= 1
+        # Each line must have at least 3 tab-separated fields
+        for line in captured["lines"]:
+            fields = line.split("\t")
+            assert len(fields) >= 3, f"Expected >=3 tab fields, got {len(fields)}: {line!r}"
+
+    def test_fzf_branch_empty_db_prints_message(self, tmp_path, monkeypatch, capsys):
+        """When fzf is active but no conversations exist, prints 'No conversations found.'"""
+        db_path = tmp_path / "empty.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            """CREATE TABLE conversations (
+                session_id TEXT, display_name TEXT, name TEXT,
+                project TEXT, start_ts INTEGER, end_ts INTEGER,
+                prompt_count INTEGER, md_path TEXT
+            )"""
+        )
+        conn.execute(
+            """CREATE TABLE prompts (
+                id INTEGER PRIMARY KEY, session_id TEXT,
+                prompt_text TEXT, timestamp INTEGER, project TEXT
+            )"""
+        )
+        conn.commit()
+        conn.close()
+
+        monkeypatch.setattr("promptvault.search.has_fzf", lambda: True)
+        # Patch isatty on the real stdout so capsys can still capture print() output.
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        monkeypatch.setenv("PROMPTVAULT_VAULT", str(tmp_path / "vault"))
+
+        with patch("promptvault.search.get_db") as mock_get_db:
+            mock_get_db.return_value = sqlite3.connect(str(db_path))
+            args = build_parser().parse_args(["recent"])
+            cmd_recent(args, db_path)
+
+        out = capsys.readouterr().out
+        assert "No conversations found." in out
+
+
+# ---------------------------------------------------------------------------
+# cmd_list fzf branch
+# ---------------------------------------------------------------------------
+
+
+class TestCmdListFzfBranch:
+    def test_fzf_branch_calls_run_fzf_with_tab_separated_lines(self, populated_env, monkeypatch):
+        """When fzf is available and stdout is a tty, cmd_list calls _run_fzf with
+        lines containing at least 3 tab-separated fields (md_path, visible, full title)."""
+        captured = {}
+
+        def fake_run_fzf(lines, vault_dir, **kwargs):
+            captured["lines"] = lines
+
+        monkeypatch.setattr("promptvault.search._run_fzf", fake_run_fzf)
+        monkeypatch.setattr("promptvault.search.has_fzf", lambda: True)
+        monkeypatch.setattr("promptvault.search.sys.stdout", MagicMock(isatty=lambda: True))
+        monkeypatch.setenv("PROMPTVAULT_VAULT", str(populated_env["vault_dir"]))
+
+        args = build_parser().parse_args(["list"])
+        cmd_list(args, populated_env["db_path"])
+
+        assert "lines" in captured
+        assert len(captured["lines"]) >= 1
+        for line in captured["lines"]:
+            fields = line.split("\t")
+            assert len(fields) >= 3, f"Expected >=3 tab fields, got {len(fields)}: {line!r}"
+
+    def test_fzf_branch_respects_filters(self, populated_env, monkeypatch):
+        """cmd_list fzf branch applies --project filter before calling _run_fzf."""
+        captured = {}
+
+        def fake_run_fzf(lines, vault_dir, **kwargs):
+            captured["lines"] = lines
+
+        monkeypatch.setattr("promptvault.search._run_fzf", fake_run_fzf)
+        monkeypatch.setattr("promptvault.search.has_fzf", lambda: True)
+        monkeypatch.setattr("promptvault.search.sys.stdout", MagicMock(isatty=lambda: True))
+        monkeypatch.setenv("PROMPTVAULT_VAULT", str(populated_env["vault_dir"]))
+
+        # Only project-beta matches — should yield exactly 1 line
+        args = build_parser().parse_args(["list", "--project", "beta"])
+        cmd_list(args, populated_env["db_path"])
+
+        assert len(captured["lines"]) == 1
+        # Line must start with the md_path from the project-beta conversation
+        conn = sqlite3.connect(str(populated_env["db_path"]))
+        beta_row = conn.execute(
+            "SELECT md_path FROM conversations WHERE project LIKE '%beta%' LIMIT 1"
+        ).fetchone()
+        conn.close()
+        assert beta_row is not None
+        assert captured["lines"][0].startswith(beta_row[0])
+
+
+# ---------------------------------------------------------------------------
+# main() interactive path
+# ---------------------------------------------------------------------------
+
+
+class TestMainInteractivePath:
+    def test_no_subcommand_fzf_available_calls_cmd_search_interactive(
+        self, populated_env, monkeypatch, tmp_path
+    ):
+        """No subcommand + fzf available + tty → cmd_search_interactive is called."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_DB", str(populated_env["db_path"]))
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setenv("PROMPTVAULT_VAULT", str(populated_env["vault_dir"]))
+        monkeypatch.setattr(sys, "argv", ["promptvault"])
+
+        monkeypatch.setattr("promptvault.search.has_fzf", lambda: True)
+        monkeypatch.setattr("promptvault.search.sys.stdout", MagicMock(isatty=lambda: True))
+
+        called_with = {}
+
+        def fake_cmd_search_interactive(conn, query, vault_dir, db_path=None):
+            called_with["query"] = query
+            called_with["vault_dir"] = vault_dir
+            called_with["db_path"] = db_path
+
+        monkeypatch.setattr(
+            "promptvault.search.cmd_search_interactive", fake_cmd_search_interactive
+        )
+
+        main()
+
+        assert "query" in called_with
+        assert called_with["query"] is None
+        assert called_with["db_path"] == populated_env["db_path"]
+
+
+# ---------------------------------------------------------------------------
+# has_fzf
+# ---------------------------------------------------------------------------
+
+
+class TestHasFzf:
+    def test_returns_true_when_fzf_installed(self, monkeypatch):
+        from promptvault.search import has_fzf
+
+        monkeypatch.setattr("promptvault.search.shutil.which", lambda cmd: "/usr/local/bin/fzf")
+        assert has_fzf() is True
+
+    def test_returns_false_when_fzf_missing(self, monkeypatch):
+        from promptvault.search import has_fzf
+
+        monkeypatch.setattr("promptvault.search.shutil.which", lambda cmd: None)
+        assert has_fzf() is False
+
+
+# ---------------------------------------------------------------------------
+# _fts_search OR fallback (lines 311-315)
+# ---------------------------------------------------------------------------
+
+
+class TestFtsSearchOrFallback:
+    """Test the OR fallback path in _fts_search when AND yields no results."""
+
+    def test_or_fallback_when_and_returns_nothing(self, populated_env):
+        """Multi-word query where words exist in different sessions triggers OR fallback."""
+        conn = sqlite3.connect(str(populated_env["db_path"]))
+        # "docker" is in sess-a1, "authentication" is in sess-b1
+        # AND search returns nothing, OR fallback should find both
+        rows = _fts_search(conn, "docker authentication")
+        assert len(rows) >= 2
+        texts = [r[0].lower() for r in rows]
+        assert any("docker" in t for t in texts)
+        assert any("authentication" in t for t in texts)
+
+    def test_and_match_does_not_trigger_fallback(self, populated_env):
+        """Single-session multi-word query that matches via AND does not need OR fallback."""
+        conn = sqlite3.connect(str(populated_env["db_path"]))
+        # "docker" and "networking" are both in sess-a1 — AND works
+        rows = _fts_search(conn, "docker networking")
+        assert len(rows) >= 1
+        assert any("docker" in r[0].lower() and "networking" in r[0].lower() for r in rows)
+
+    def test_operational_error_returns_empty(self, populated_env):
+        """Malformed FTS query returns empty list, not an exception."""
+        conn = sqlite3.connect(str(populated_env["db_path"]))
+        rows = _fts_search(conn, "AND OR NOT")
+        assert isinstance(rows, list)
+
+
+# ---------------------------------------------------------------------------
+# cmd_search interactive branch (line 351)
+# ---------------------------------------------------------------------------
+
+
+class TestCmdSearchInteractiveBranch:
+    """Test cmd_search routing to cmd_search_interactive when fzf is available."""
+
+    def test_fzf_available_routes_to_interactive(self, populated_env, monkeypatch):
+        """When fzf is available and stdout is a tty, cmd_search calls cmd_search_interactive."""
+        called = {}
+
+        def fake_interactive(conn, query, vault_dir, db_path=None):
+            called["query"] = query
+            called["db_path"] = db_path
+
+        monkeypatch.setattr("promptvault.search.cmd_search_interactive", fake_interactive)
+        monkeypatch.setattr("promptvault.search.has_fzf", lambda: True)
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        monkeypatch.setenv("PROMPTVAULT_VAULT", str(populated_env["vault_dir"]))
+
+        args = build_parser().parse_args(["search", "docker"])
+        cmd_search(args, populated_env["db_path"])
+
+        assert "query" in called
+        assert called["query"] == "docker"
+        assert called["db_path"] == populated_env["db_path"]
+
+    def test_fzf_available_no_query_routes_to_interactive(self, populated_env, monkeypatch):
+        """cmd_search with no query still routes to interactive when fzf is available."""
+        called = {}
+
+        def fake_interactive(conn, query, vault_dir, db_path=None):
+            called["query"] = query
+
+        monkeypatch.setattr("promptvault.search.cmd_search_interactive", fake_interactive)
+        monkeypatch.setattr("promptvault.search.has_fzf", lambda: True)
+        monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+        monkeypatch.setenv("PROMPTVAULT_VAULT", str(populated_env["vault_dir"]))
+
+        args = build_parser().parse_args(["search"])
+        cmd_search(args, populated_env["db_path"])
+
+        assert called["query"] is None
+
+
+# ---------------------------------------------------------------------------
+# main() _fzf-lines in-process (lines 588-593)
+# ---------------------------------------------------------------------------
+
+
+class TestMainFzfLines:
+    """Test the _fzf-lines hidden command in-process (not via subprocess)."""
+
+    def test_fzf_lines_no_query_outputs_all(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines without query writes all non-empty conversations to stdout."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys, "argv", ["promptvault", "--db", str(populated_env["db_path"]), "_fzf-lines"]
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        # 2 non-empty sessions (sess-a1 and sess-b1), sess-c1 is slash-only
+        assert len(lines) == 2
+        for line in lines:
+            assert "\t" in line
+            assert line.split("\t")[0].endswith(".md")
+
+    def test_fzf_lines_with_query_filters(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines with query returns only matching conversations."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["promptvault", "--db", str(populated_env["db_path"]), "_fzf-lines", "docker"],
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        assert len(lines) >= 1
+        # "docker" should only be in sess-a1
+        assert len(lines) == 1
+
+    def test_fzf_lines_empty_query_returns_all(self, populated_env, monkeypatch, capsys, tmp_path):
+        """_fzf-lines with empty string returns all conversations."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(
+            sys, "argv", ["promptvault", "--db", str(populated_env["db_path"]), "_fzf-lines", ""]
+        )
+
+        main()
+
+        out = capsys.readouterr().out
+        lines = [line for line in out.strip().split("\n") if line]
+        assert len(lines) == 2
+
+
+# ---------------------------------------------------------------------------
+# main() command dispatch (lines 595-603)
+# ---------------------------------------------------------------------------
+
+
+class TestMainCommandDispatch:
+    """Test main() dispatches to each command handler via the commands dict."""
+
+    def test_recent_subcommand(self, populated_env, monkeypatch, capsys, tmp_path):
+        """'promptvault recent --no-fzf' dispatches to cmd_recent."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_DB", str(populated_env["db_path"]))
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(sys, "argv", ["promptvault", "recent", "--no-fzf"])
+
+        main()
+
+        out = capsys.readouterr().out
+        assert "Last" in out and "prompts:" in out
+
+    def test_list_subcommand(self, populated_env, monkeypatch, capsys, tmp_path):
+        """'promptvault list --no-fzf' dispatches to cmd_list."""
+        from promptvault.search import main
+
+        monkeypatch.setenv("PROMPTVAULT_DB", str(populated_env["db_path"]))
+        monkeypatch.setenv("PROMPTVAULT_HISTORY", str(tmp_path / "no-history.jsonl"))
+        monkeypatch.setattr(sys, "argv", ["promptvault", "list", "--no-fzf"])
+
+        main()
+
+        out = capsys.readouterr().out
+        assert "conversation(s):" in out

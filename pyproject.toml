@@ -54,3 +54,12 @@ minversion = "7.3"
 addopts = "-ra -q"
 testpaths = ["tests"]
 log_cli = true
+
+[tool.coverage.run]
+source = ["promptvault"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "if __name__ == .__main__.",
+    "pragma: no cover",
+]
