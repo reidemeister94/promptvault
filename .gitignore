@@ -114,3 +114,6 @@ cython_debug/
 project_summary.txt
 .mcp.json
 .claude/
+
+docs/plans/
+docs/chronicles/

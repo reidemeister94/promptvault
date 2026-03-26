@@ -88,6 +88,16 @@ def has_fzf() -> bool:
     return shutil.which("fzf") is not None
 
 
+def _fzf_version() -> tuple[int, ...]:
+    """Parse fzf version. Returns (0, 0, 0) on failure."""
+    try:
+        out = subprocess.run(["fzf", "--version"], capture_output=True, text=True).stdout
+        match = re.match(r"(\d+)\.(\d+)\.(\d+)", out.strip())
+        return tuple(int(x) for x in match.groups()) if match else (0, 0, 0)
+    except FileNotFoundError:
+        return (0, 0, 0)
+
+
 def _short_title(text: str, max_words: int = 4) -> str:
     """Shorten a title to max_words, capped at 35 chars."""
     text = clean_prompt_text(text)
@@ -182,19 +192,33 @@ def _fts_session_ids(conn: sqlite3.Connection, query: str) -> list[str]:
 
 
 def _fzf_preview_script(vault_dir: Path) -> str:
-    """Shell command for fzf --preview. Uses {q} to highlight the live query."""
+    """Shell command for fzf --preview. Uses {q} to highlight the live query.
+
+    Outputs 3 metadata lines (pinned via ~3 in preview-window) then prompt content.
+    """
     # {q} is replaced by fzf with the current query string in real time
     # cat -s squeezes consecutive blank lines into one
+    # First 3 lines: title, metadata fields, separator — pinned by ~3
     return (
         f"md_path=$(echo {{}} | cut -f1); "
         f"file='{vault_dir}/'\"$md_path\"; "
         f"q={{q}}; "
         f'if [ ! -f "$file" ]; then echo "File not found"; '
-        f'elif [ -n "$q" ]; then '
+        f"else "
+        # Line 1: title from markdown heading
+        f"head -20 \"$file\" | grep '^# ' | head -1; "
+        # Line 2: key metadata fields on one line
+        f"head -20 \"$file\" | grep -E '^\\*\\*(Project|Duration|Prompts)\\*\\*' "
+        f"| head -3 | tr '\\n' ' '; echo; "
+        # Line 3: separator
+        f"echo '---'; "
+        # Prompt content with optional query highlighting
+        f'if [ -n "$q" ]; then '
         f"sed -n '/^## Prompt/,$p' \"$file\" | cat -s | "
         f"GREP_COLOR='1;33' grep --color=always -i -E \"$q|$\"; "
         f"else "
         f"sed -n '/^## Prompt/,$p' \"$file\" | cat -s; "
+        f"fi; "
         f"fi"
     )
 
@@ -215,18 +239,30 @@ def _run_fzf(
     vault_dir: Path,
     db_path: Path | None = None,
     query: str | None = None,
-    header: str = "↑↓ navigate · enter open · ctrl-y copy · esc quit",
+    header: str = "",
     prompt: str = "promptvault> ",
 ):
     """Run fzf with conversation lines and preview."""
+    fzf_ver = _fzf_version()
+
+    # Resolve output dir for search history persistence
+    output_dir = Path(
+        os.environ.get("PROMPTVAULT_OUTPUT", str(Path.home() / ".claude" / "prompt-library"))
+    )
+
+    # Default header: show conversation count as stats
+    if not header:
+        header = f"{len(lines)} conversations"
+
     fzf_cmd = [
         "fzf",
         "--ansi",
         "--delimiter=\t",
         "--with-nth=2",  # display only the visible part (after tab)
+        "--multi",
         "--preview",
         _fzf_preview_script(vault_dir),
-        "--preview-window=right:50%:wrap",
+        "--preview-window=right:50%:wrap:~3",  # ~3 pins metadata header lines
         f"--header={header}",
         f"--prompt={prompt}",
         "--no-sort",  # keep our ordering (by date)
@@ -236,7 +272,24 @@ def _run_fzf(
         "--color=header:italic:dim,prompt:cyan,pointer:cyan,marker:green",
         "--bind",
         f"ctrl-y:execute-silent({_fzf_copy_script(vault_dir)})+bell",
+        "--bind",
+        "ctrl-/:toggle-preview",
+        # enter opens editor via execute() and returns to fzf afterward
+        "--bind",
+        f"enter:execute({os.environ.get('EDITOR', 'less')} {vault_dir}/{{1}})",
+        "--history",
+        str(output_dir / ".search_history"),
     ]
+
+    # Version-gated features: highlight-line, ghost text, footer, tmux popup
+    if fzf_ver >= (0, 53, 0):
+        fzf_cmd.append("--highlight-line")
+    if fzf_ver >= (0, 54, 0):
+        fzf_cmd.append("--ghost=Type to search prompts...")
+    if fzf_ver >= (0, 53, 0):
+        fzf_cmd.append("--footer=enter open | ctrl-y copy | ctrl-/ preview | tab select | esc quit")
+    if os.environ.get("TMUX") and fzf_ver >= (0, 38, 0):
+        fzf_cmd.extend(["--tmux", "center,80%,60%"])
 
     # If db_path provided, use FTS search on keystroke instead of fzf's built-in filter
     if db_path:
@@ -254,20 +307,13 @@ def _run_fzf(
         fzf_cmd.extend(["--query", query])
 
     try:
-        result = subprocess.run(
+        subprocess.run(
             fzf_cmd,
             input="\n".join(lines),
             capture_output=True,
             text=True,
         )
-        if result.returncode == 0 and result.stdout.strip():
-            md_path = result.stdout.strip().split("\t")[0]
-            full_path = vault_dir / md_path
-            if full_path.exists():
-                editor = os.environ.get("EDITOR", "less")
-                subprocess.run([editor, str(full_path)])
-            else:
-                print(f"File not found: {full_path}")
+        # editor is launched by fzf's execute() binding; Esc exits
     except FileNotFoundError:
         print("fzf not found. Install it: brew install fzf", file=sys.stderr)
         sys.exit(1)

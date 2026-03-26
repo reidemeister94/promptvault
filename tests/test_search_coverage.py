@@ -25,6 +25,7 @@ from promptvault.search import (
     _fts_session_ids,
     _fzf_copy_script,
     _fzf_preview_script,
+    _fzf_version,
     _run_fzf,
     build_parser,
     cmd_list,
@@ -641,52 +642,27 @@ class TestRunFzf:
         md_path = rows[0][0]
         return [f"{md_path}\t11-14 22:13   2p  project-alpha    explain docker"], md_path
 
-    def test_returncode_0_with_md_path_opens_editor(self, populated_env, monkeypatch):
-        """rc=0 + valid md_path → editor (EDITOR env var) is invoked with the full path."""
-        lines, md_path = self._make_lines(populated_env)
+    def test_enter_binding_contains_execute_with_editor(self, populated_env, monkeypatch):
+        """fzf command includes enter:execute() binding with EDITOR for in-fzf file opening."""
         vault_dir = populated_env["vault_dir"]
-        full_path = vault_dir / md_path
 
-        fzf_result = MagicMock()
-        fzf_result.returncode = 0
-        fzf_result.stdout = f"{md_path}\t11-14 22:13   2p  project-alpha    explain docker\n"
-
-        editor_calls = []
+        captured_cmd = []
 
         def fake_subprocess_run(cmd, **kwargs):
-            if cmd[0] == "fzf":
-                return fzf_result
-            # second call is the editor
-            editor_calls.append(cmd)
-            return MagicMock(returncode=0)
+            captured_cmd.extend(cmd)
+            result = MagicMock()
+            result.returncode = 130  # Esc
+            result.stdout = ""
+            return result
 
         monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+        monkeypatch.setattr("promptvault.search._fzf_version", lambda: (0, 70, 0))
         monkeypatch.setenv("EDITOR", "nano")
 
-        _run_fzf(lines, vault_dir)
+        _run_fzf(["a.md\ttest line"], vault_dir)
 
-        assert len(editor_calls) == 1
-        assert editor_calls[0][0] == "nano"
-        assert editor_calls[0][1] == str(full_path)
-
-    def test_returncode_0_file_missing_prints_not_found(self, populated_env, monkeypatch, capsys):
-        """rc=0 + md_path pointing to nonexistent file → prints 'File not found'."""
-        vault_dir = populated_env["vault_dir"]
-        fake_md_path = "nonexistent/session.md"
-
-        fzf_result = MagicMock()
-        fzf_result.returncode = 0
-        fzf_result.stdout = f"{fake_md_path}\tsome visible text\n"
-
-        monkeypatch.setattr(
-            "promptvault.search.subprocess.run",
-            lambda cmd, **kwargs: fzf_result,
-        )
-
-        _run_fzf([f"{fake_md_path}\tsome visible text"], vault_dir)
-
-        out = capsys.readouterr().out
-        assert "File not found" in out
+        bind_args = [captured_cmd[i + 1] for i, v in enumerate(captured_cmd) if v == "--bind"]
+        assert any("enter:execute(" in b and "nano" in b for b in bind_args)
 
     def test_nonzero_returncode_does_nothing(self, populated_env, monkeypatch, capsys):
         """rc != 0 (e.g. user pressed Esc) → no output, no editor invocation."""
@@ -1125,3 +1101,207 @@ class TestMainCommandDispatch:
 
         out = capsys.readouterr().out
         assert "conversation(s):" in out
+
+
+# ---------------------------------------------------------------------------
+# _fzf_version
+# ---------------------------------------------------------------------------
+
+
+class TestFzfVersion:
+    def test_parses_standard_version(self, monkeypatch):
+        """Standard fzf --version output like '0.70.0 (Homebrew)' returns (0, 70, 0)."""
+        result = MagicMock()
+        result.stdout = "0.70.0 (Homebrew)\n"
+        monkeypatch.setattr(
+            "promptvault.search.subprocess.run",
+            lambda cmd, **kw: result,
+        )
+        assert _fzf_version() == (0, 70, 0)
+
+    def test_parses_plain_version(self, monkeypatch):
+        """Plain version string '0.38.0' returns (0, 38, 0)."""
+        result = MagicMock()
+        result.stdout = "0.38.0\n"
+        monkeypatch.setattr(
+            "promptvault.search.subprocess.run",
+            lambda cmd, **kw: result,
+        )
+        assert _fzf_version() == (0, 38, 0)
+
+    def test_returns_zeros_on_bad_output(self, monkeypatch):
+        """Non-version output returns (0, 0, 0)."""
+        result = MagicMock()
+        result.stdout = "not a version\n"
+        monkeypatch.setattr(
+            "promptvault.search.subprocess.run",
+            lambda cmd, **kw: result,
+        )
+        assert _fzf_version() == (0, 0, 0)
+
+    def test_returns_zeros_on_file_not_found(self, monkeypatch):
+        """FileNotFoundError (fzf not installed) returns (0, 0, 0)."""
+
+        def raise_fnf(cmd, **kw):
+            raise FileNotFoundError("fzf not found")
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", raise_fnf)
+        assert _fzf_version() == (0, 0, 0)
+
+    def test_returns_zeros_on_empty_output(self, monkeypatch):
+        """Empty stdout returns (0, 0, 0)."""
+        result = MagicMock()
+        result.stdout = ""
+        monkeypatch.setattr(
+            "promptvault.search.subprocess.run",
+            lambda cmd, **kw: result,
+        )
+        assert _fzf_version() == (0, 0, 0)
+
+
+# ---------------------------------------------------------------------------
+# _run_fzf new features
+# ---------------------------------------------------------------------------
+
+
+class TestRunFzfNewFeatures:
+    """Tests for new fzf flags added to _run_fzf."""
+
+    def _capture_fzf_cmd(self, monkeypatch, fzf_ver: tuple[int, ...] = (0, 0, 0)):
+        """Helper: mock subprocess.run and _fzf_version, return captured fzf command."""
+        captured_cmd: list[str] = []
+
+        # First call is fzf --version (from _fzf_version), rest are fzf main
+        def fake_subprocess_run(cmd, **kwargs):
+            if cmd == ["fzf", "--version"]:
+                # Should not be called since we mock _fzf_version directly
+                result = MagicMock()
+                result.stdout = "0.0.0"
+                return result
+            captured_cmd.extend(cmd)
+            result = MagicMock()
+            result.returncode = 1  # Esc so no editor
+            result.stdout = ""
+            return result
+
+        monkeypatch.setattr("promptvault.search.subprocess.run", fake_subprocess_run)
+        monkeypatch.setattr("promptvault.search._fzf_version", lambda: fzf_ver)
+        return captured_cmd
+
+    def test_multi_flag_present(self, populated_env, monkeypatch):
+        """--multi must be in the fzf command."""
+        captured = self._capture_fzf_cmd(monkeypatch)
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert "--multi" in captured
+
+    def test_highlight_line_with_new_fzf(self, populated_env, monkeypatch):
+        """--highlight-line present when fzf >= 0.53.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 53, 0))
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert "--highlight-line" in captured
+
+    def test_highlight_line_absent_with_old_fzf(self, populated_env, monkeypatch):
+        """--highlight-line absent when fzf < 0.53.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 52, 0))
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert "--highlight-line" not in captured
+
+    def test_ctrl_slash_toggle_preview_binding(self, populated_env, monkeypatch):
+        """ctrl-/:toggle-preview binding must be present."""
+        captured = self._capture_fzf_cmd(monkeypatch)
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert any("ctrl-/:toggle-preview" in b for b in bind_args)
+
+    def test_history_flag_present(self, populated_env, monkeypatch):
+        """--history must point to .search_history in output dir."""
+        captured = self._capture_fzf_cmd(monkeypatch)
+        monkeypatch.setenv("PROMPTVAULT_OUTPUT", str(populated_env["output_dir"]))
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert "--history" in captured
+        history_idx = captured.index("--history")
+        assert captured[history_idx + 1].endswith(".search_history")
+
+    def test_ghost_flag_with_new_fzf(self, populated_env, monkeypatch):
+        """--ghost present when fzf >= 0.54.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 54, 0))
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert any("--ghost=" in arg for arg in captured)
+
+    def test_ghost_flag_absent_with_old_fzf(self, populated_env, monkeypatch):
+        """--ghost absent when fzf < 0.54.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 53, 0))
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert not any("--ghost=" in arg for arg in captured)
+
+    def test_footer_with_new_fzf(self, populated_env, monkeypatch):
+        """--footer present when fzf >= 0.53.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 53, 0))
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert any("--footer=" in arg for arg in captured)
+
+    def test_footer_absent_with_old_fzf(self, populated_env, monkeypatch):
+        """--footer absent when fzf < 0.53.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 52, 0))
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert not any("--footer=" in arg for arg in captured)
+
+    def test_tmux_flag_when_in_tmux(self, populated_env, monkeypatch):
+        """--tmux present when TMUX env var set and fzf >= 0.38.0."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 38, 0))
+        monkeypatch.setenv("TMUX", "/tmp/tmux-1000/default,12345,0")
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert "--tmux" in captured
+
+    def test_tmux_flag_absent_without_tmux(self, populated_env, monkeypatch):
+        """--tmux absent when TMUX env var not set."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 70, 0))
+        monkeypatch.delenv("TMUX", raising=False)
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert "--tmux" not in captured
+
+    def test_header_shows_conversation_count(self, populated_env, monkeypatch):
+        """Default header shows the number of conversations."""
+        captured = self._capture_fzf_cmd(monkeypatch)
+        lines = ["a.md\tline1", "b.md\tline2", "c.md\tline3"]
+        _run_fzf(lines, populated_env["vault_dir"])
+        header_args = [arg for arg in captured if arg.startswith("--header=")]
+        assert any("3 conversations" in h for h in header_args)
+
+    def test_preview_window_has_tilde_3(self, populated_env, monkeypatch):
+        """Preview window includes ~3 for pinned metadata header."""
+        captured = self._capture_fzf_cmd(monkeypatch)
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        assert any("~3" in arg for arg in captured if "preview-window" in arg)
+
+    def test_enter_binding_uses_execute_with_editor(self, populated_env, monkeypatch):
+        """Enter is bound to execute() with $EDITOR so user returns to fzf after viewing."""
+        captured = self._capture_fzf_cmd(monkeypatch, fzf_ver=(0, 70, 0))
+        monkeypatch.setenv("EDITOR", "vim")
+        _run_fzf(["a.md\ttest line"], populated_env["vault_dir"])
+        bind_args = [captured[i + 1] for i, v in enumerate(captured) if v == "--bind"]
+        assert any("enter:execute(" in b and "vim" in b for b in bind_args)
+
+
+# ---------------------------------------------------------------------------
+# Preview script metadata header
+# ---------------------------------------------------------------------------
+
+
+class TestPreviewScriptMetadata:
+    def test_preview_script_contains_title_extraction(self, tmp_path):
+        """Preview script must extract title via 'grep ^# '."""
+        script = _fzf_preview_script(tmp_path / "vault")
+        assert "grep '^# '" in script
+
+    def test_preview_script_contains_metadata_extraction(self, tmp_path):
+        """Preview script must extract Project/Duration/Prompts metadata."""
+        script = _fzf_preview_script(tmp_path / "vault")
+        assert "Project" in script
+        assert "Duration" in script
+        assert "Prompts" in script
+
+    def test_preview_script_contains_separator(self, tmp_path):
+        """Preview script must output '---' separator line."""
+        script = _fzf_preview_script(tmp_path / "vault")
+        assert "echo '---'" in script
