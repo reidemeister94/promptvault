@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/promptvault-py/"><img src="https://img.shields.io/pypi/v/promptvault-py?style=flat-square&color=blue" alt="PyPI"/></a>
-  <a href="https://github.com/reidemeister94/promptvault/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/reidemeister94/promptvault/ci.yml?style=flat-square&label=CI" alt="CI"/></a>
+  <a href="https://pypi.org/project/promptvault-py/"><img src="https://img.shields.io/pypi/v/promptvault-py?style=flat-square&amp;color=blue" alt="PyPI"/></a>
+  <a href="https://github.com/reidemeister94/promptvault/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/reidemeister94/promptvault/ci.yml?style=flat-square&amp;label=CI" alt="CI"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/reidemeister94/promptvault?style=flat-square" alt="License"/></a>
-  <a href="https://github.com/reidemeister94/promptvault/stargazers"><img src="https://img.shields.io/github/stars/reidemeister94/promptvault?style=flat-square&color=yellow" alt="Stars"/></a>
-  <img src="https://img.shields.io/badge/python-3.10+-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.10+"/>
+  <a href="https://github.com/reidemeister94/promptvault/stargazers"><img src="https://img.shields.io/github/stars/reidemeister94/promptvault?style=flat-square&amp;color=yellow" alt="Stars"/></a>
+  <img src="https://img.shields.io/badge/python-3.10+-3776ab?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+"/>
   <img src="https://img.shields.io/badge/dependencies-zero-22c55e?style=flat-square" alt="Zero Dependencies"/>
 </p>
 
