@@ -31,7 +31,9 @@ Changelog = "https://github.com/reidemeister94/promptvault/releases"
 
 [project.scripts]
 promptvault = "promptvault.search:main"
+pv = "promptvault.search:main"
 promptvault-sync = "promptvault.sync:main"
+pv-sync = "promptvault.sync:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

@@ -126,9 +126,11 @@ Database: ~/.claude/prompt-library/prompts.db
 ### Search
 
 ```bash
-promptvault                        # interactive browser (all conversations)
-promptvault search "migration"     # search + interactive results
+pv                        # interactive browser (all conversations)
+pv search "migration"     # search + interactive results
 ```
+
+> **Tip:** `pv` is a short alias for `promptvault`. Both work. Same for `pv-sync` / `promptvault-sync`.
 
 ---
 
