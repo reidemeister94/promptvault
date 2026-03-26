@@ -20,7 +20,8 @@
     <line x1="40" y1="10" x2="40" y2="20" stroke="url(#accent)" stroke-width="2.5"/>
   </g>
   <!-- Title -->
-  <text x="540" y="125" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="700" fill="white">promptvault</text>
+  <text x="540" y="125" font-family="system-ui, -apple-system, sans-serif" font-size="52" font-weight="700" fill="white">pv</text>
+  <text x="606" y="125" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill="#64748b">(promptvault)</text>
   <!-- Subtitle -->
   <text x="440" y="175" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#94a3b8">Your Claude Code conversations, searchable forever.</text>
   <!-- Terminal preview -->
@@ -30,7 +31,7 @@
     <circle cx="36" cy="15" r="5" fill="#eab308"/>
     <circle cx="52" cy="15" r="5" fill="#22c55e"/>
     <text x="16" y="48" font-family="monospace" font-size="14" fill="#22c55e">$</text>
-    <text x="30" y="48" font-family="monospace" font-size="14" fill="#e2e8f0">promptvault search "database migration"</text>
+    <text x="30" y="48" font-family="monospace" font-size="14" fill="#e2e8f0">pv search "database migration"</text>
     <text x="16" y="72" font-family="monospace" font-size="13" fill="#64748b">Found 20 results across 12 conversations</text>
   </g>
 </svg>
