@@ -1,3 +1,9 @@
+## 0.0.6 (2026-03-26)
+
+### Fix
+
+- improve UI and enable text selection
+
 ## 0.0.5 (2026-03-26)
 
 ### Feat
