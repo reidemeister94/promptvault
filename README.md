@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/promptvault-py/"><img src="https://img.shields.io/pypi/v/promptvault-py?style=flat-square&amp;color=blue" alt="PyPI"/></a>
+  <a href="https://pypi.org/project/promptvault-py/"><img src="https://img.shields.io/pypi/v/promptvault-py?style=flat-square&amp;color=blue&amp;v=2" alt="PyPI"/></a>
   <a href="https://github.com/reidemeister94/promptvault/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/reidemeister94/promptvault/ci.yml?style=flat-square&amp;label=CI" alt="CI"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/reidemeister94/promptvault?style=flat-square" alt="License"/></a>
   <a href="https://github.com/reidemeister94/promptvault/stargazers"><img src="https://img.shields.io/github/stars/reidemeister94/promptvault?style=flat-square&amp;color=yellow" alt="Stars"/></a>
