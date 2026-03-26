@@ -3,7 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/reidemeister94/promptvault/releases"><img src="https://img.shields.io/github/v/release/reidemeister94/promptvault?style=flat-square&color=blue" alt="Release"/></a>
+  <a href="https://pypi.org/project/promptvault/"><img src="https://img.shields.io/pypi/v/promptvault?style=flat-square&color=blue" alt="PyPI"/></a>
+  <a href="https://github.com/reidemeister94/promptvault/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/reidemeister94/promptvault/ci.yml?style=flat-square&label=CI" alt="CI"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/reidemeister94/promptvault?style=flat-square" alt="License"/></a>
   <a href="https://github.com/reidemeister94/promptvault/stargazers"><img src="https://img.shields.io/github/stars/reidemeister94/promptvault?style=flat-square&color=yellow" alt="Stars"/></a>
   <a href="https://github.com/reidemeister94/promptvault/issues"><img src="https://img.shields.io/github/issues/reidemeister94/promptvault?style=flat-square" alt="Issues"/></a>
@@ -90,12 +91,18 @@ The sync is **idempotent** — always rebuilds from `history.jsonl`, so it's imp
 ### Install
 
 ```bash
+pip install promptvault
+```
+
+Or install from source:
+
+```bash
 git clone https://github.com/reidemeister94/promptvault.git
 cd promptvault
 pip install -e .
 ```
 
-> **Windows (without WSL):** use `pip install -e .` from PowerShell or Command Prompt. If `python` is not on your PATH, install from [python.org](https://www.python.org/downloads/) or via `winget install Python.Python.3.12`.
+> **Windows (without WSL):** If `python` is not on your PATH, install from [python.org](https://www.python.org/downloads/) or via `winget install Python.Python.3.12`.
 
 ### Sync your history
 
@@ -298,12 +305,15 @@ promptvault/
 │   ├── search.py     # Interactive fzf search + plain text CLI
 │   └── hook.py       # UserPromptSubmit hook (real-time capture)
 ├── tests/
-│   ├── conftest.py   # Shared fixtures (synthetic history.jsonl)
-│   ├── test_sync.py
-│   ├── test_search.py
-│   ├── test_hook.py
-│   └── test_e2e.py   # End-to-end: builds DB from scratch, tests every path
+│   ├── conftest.py          # Shared fixtures (synthetic history.jsonl)
+│   ├── test_sync.py         # Sync module unit tests
+│   ├── test_sync_coverage.py  # Coverage: format_duration, _clean_for_title, make_display_name, generate_markdown, main
+│   ├── test_search.py       # Search module unit tests
+│   ├── test_search_coverage.py # Coverage: _auto_sync_if_stale, cmd_list, cmd_recent, cmd_search, main dispatch
+│   ├── test_hook.py         # Hook module tests
+│   └── test_e2e.py          # End-to-end: builds DB from scratch, tests every path
 ├── docs/
+│   ├── images/          # SVG assets (social preview, terminal demo, how-it-works)
 │   ├── plans/           # Research and implementation plans
 │   └── chronicles/      # Development session write-ups
 ├── pyproject.toml
@@ -360,7 +370,7 @@ make format          # Format with ruff
 
 > **Windows (without WSL):** `make` is not available by default. Run directly: `pip install -e ".[dev]"`, `pytest`, `ruff check .`, `ruff format .`.
 
-116 tests covering sync, search, hook, and end-to-end. All use synthetic data — no dependency on real `history.jsonl`.
+187 tests covering sync, search, hook, and end-to-end. All use synthetic data — no dependency on real `history.jsonl`.
 
 ---
 

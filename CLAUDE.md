@@ -1,3 +1,44 @@
+## Project Quick Reference
+
+| Item | Value |
+|------|-------|
+| **Language** | Python 3.10+, zero runtime deps |
+| **Entry points** | `promptvault` → `search:main`, `promptvault-sync` → `sync:main` |
+| **Source** | `promptvault/sync.py`, `promptvault/search.py`, `promptvault/hook.py` |
+| **Tests** | `tests/` — 187 tests, pytest, synthetic data only |
+| **Lint/Format** | ruff (line-length=100) |
+| **Python env** | `/opt/anaconda3/envs/promptvault` |
+
+### DB Schema (prompts.db)
+
+```
+conversations(session_id PK, name, display_name, project, start_ts, end_ts, prompt_count, md_path)
+prompts(id PK, session_id FK, prompt_text, timestamp, project, seq)
+prompts_fts USING fts5(prompt_text, content=prompts)  -- BM25 ranking
+```
+
+### Key Env Vars
+
+| Variable | Default |
+|----------|---------|
+| `PROMPTVAULT_HISTORY` | `~/.claude/history.jsonl` |
+| `PROMPTVAULT_OUTPUT` | `~/.claude/prompt-library` |
+| `PROMPTVAULT_DB` | `~/.claude/prompt-library/prompts.db` |
+| `PROMPTVAULT_VAULT` | `~/.claude/prompt-library/vault` |
+| `PROMPTVAULT_PROJECTS` | `~/.claude/projects` |
+
+### Testing
+
+```bash
+/opt/anaconda3/envs/promptvault/bin/python -m pytest tests/ -v
+```
+
+- `conftest.py`: `tmp_history`, `tmp_output` fixtures (synthetic history.jsonl)
+- `test_e2e.py`: `e2e_env` fixture (11 sessions, full vault+DB, covers all edge cases)
+- All tests use synthetic data — never touch real `~/.claude/`
+
+---
+
 ### Core Pillars
 
 1. **Maximize simplicity, minimize complexity.** Weigh complexity cost against improvement magnitude.
