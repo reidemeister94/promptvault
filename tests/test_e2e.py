@@ -404,12 +404,17 @@ class TestConversationLinesE2E:
         assert len(lines) >= 1
 
     def test_short_title_in_visible_part(self, e2e_env):
+        import re as _re
+
+        _ansi = _re.compile(r"\x1b\[[0-9;]*m")
         conn = sqlite3.connect(str(e2e_env["db_path"]))
         lines = _build_conversation_lines(conn)
         for line in lines:
             visible = line.split("\t")[1]
-            # Visible part should be compact (no 80+ char titles)
-            assert len(visible) < 80
+            # Strip ANSI escape codes before measuring visual length;
+            # result lines now embed color codes for date/project/star fields
+            visual_len = len(_ansi.sub("", visible))
+            assert visual_len < 80, f"Visible part too long ({visual_len}): {visible!r}"
 
     def test_project_name_in_visible_part(self, e2e_env):
         conn = sqlite3.connect(str(e2e_env["db_path"]))

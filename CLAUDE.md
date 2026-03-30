@@ -83,6 +83,18 @@ tags(session_id TEXT, tag TEXT, created_ts INTEGER, PRIMARY KEY(session_id, tag)
 | alt-r | Toggle raw mode | 0.66 |
 | tab | Multi-select | any |
 
+### fzf UI Design (Catppuccin Mocha palette)
+
+| Layer | fzf min | What |
+|-------|---------|------|
+| 24-bit color palette | 0.62 | `bg:-1`, `hl:#cba6f7`, `hl+:#fab387:bold`, `prompt:#b4befe`, `marker:#a6e3a1`, `alt-bg:#313244` |
+| Section borders | 0.58 | `--input-border=rounded` + `--input-label= N conversations ` + `--preview-border=line` + `--preview-label= Preview ` |
+| ANSI result lines | any | Star=green(`GREEN_24`), date+count=`DIM`, project=`LAVENDER`(24-bit), title=unstyled |
+| Footer `·` groups | 0.53 | `^t mode · ^p proj · ^d date · ^b ★fav · ^g show★` (max 66 chars for 80-col) |
+| Fallback (<0.58) | — | Single `--border=rounded`, 256-color, plain footer |
+
+**ANSI constants** (search.py): `BOLD`, `DIM`, `CYAN`, `GREEN`, `YELLOW`, `RESET`, `LAVENDER`(24-bit), `GREEN_24`(24-bit)
+
 ### Shell Widget
 
 ```bash

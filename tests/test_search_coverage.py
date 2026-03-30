@@ -1550,7 +1550,7 @@ class TestTransformBindings:
         assert len(footer_args) >= 1
         footer = footer_args[0]
         assert "^t mode" in footer
-        assert "^p project" in footer
+        assert "^p proj" in footer  # abbreviated to fit 66-char limit
         assert "^d date" in footer
 
     def test_footer_no_new_keybindings_without_db(self, populated_env, monkeypatch):

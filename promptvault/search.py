@@ -27,13 +27,17 @@ SYNONYMS: dict[str, list[str]] = {
     "deploy": ["deploy", "release", "ship", "publish"],
 }
 
-# ANSI colors
+# ANSI colors for result lines (in-band formatting, interpreted by fzf --ansi)
 BOLD = "\033[1m"
 DIM = "\033[2m"
 CYAN = "\033[36m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 RESET = "\033[0m"
+# 24-bit Catppuccin Mocha-inspired accent for project column
+LAVENDER = "\033[38;2;180;190;254m"
+# 24-bit green for bookmarked star (matches fzf marker color)
+GREEN_24 = "\033[38;2;166;227;161m"
 
 
 # ---------------------------------------------------------------------------
@@ -293,9 +297,15 @@ def _build_conversation_lines(
         proj = _short_project(project)
         date_str = ts_to_short(start_ts)
         title = _short_title(display_name)
-        star = "★ " if sid in fav_ids else "  "
+        # Color the star green when bookmarked; keep padding space when not
+        star_colored = f"{GREEN_24}★{RESET} " if sid in fav_ids else "  "
+        proj_colored = f"{LAVENDER}{proj:16s}{RESET}"
         # Field 1: md_path (hidden), Field 2: visible display, Field 3: session_id (hidden, for tags)
-        line = f"{md_path}\t{star}{date_str}  {prompt_count:2d}p  {proj:16s}  {title}\t{sid}"
+        line = (
+            f"{md_path}\t"
+            f"{star_colored}{DIM}{date_str}  {prompt_count:2d}p{RESET}  {proj_colored}  {title}"
+            f"\t{sid}"
+        )
         lines.append(line)
     return lines
 
@@ -330,7 +340,8 @@ def _build_prompt_lines(conn: sqlite3.Connection, query: str | None = None) -> l
         proj = _short_project(project)
         date_str = ts_to_short(ts)
         prompt_short = truncate(prompt_text, max_len=80)
-        line = f"{md_path}\t{date_str}  {proj:16s}  {prompt_short}"
+        proj_colored = f"{LAVENDER}{proj:16s}{RESET}"
+        line = f"{md_path}\t{DIM}{date_str}{RESET}  {proj_colored}  {prompt_short}"
         lines.append(line)
     return lines
 
@@ -677,7 +688,9 @@ def _build_transform_bindings(pv_bin: str, db_path: Path) -> list[str]:
     return bindings
 
 
-def _build_version_gated_flags(fzf_ver: tuple[int, ...], vault_dir: Path) -> list[str]:
+def _build_version_gated_flags(
+    fzf_ver: tuple[int, ...], vault_dir: Path, conv_count: int = 0
+) -> list[str]:
     """Build fzf flags that require specific fzf versions."""
     flags: list[str] = []
     if fzf_ver >= (0, 33, 0):
@@ -689,7 +702,18 @@ def _build_version_gated_flags(fzf_ver: tuple[int, ...], vault_dir: Path) -> lis
         flags.append("--highlight-line")
     if fzf_ver >= (0, 54, 0):
         flags.append("--ghost=Type to search prompts...")
-    # --style=full adds per-section borders that eat too much width on small terminals
+    # --style=full adds per-section borders that eat too much width on small terminals;
+    # instead use individual section borders for precise control (0.58+)
+    if fzf_ver >= (0, 58, 0):
+        count_label = f" {conv_count} conversations " if conv_count else " PromptVault "
+        flags.extend(
+            [
+                "--input-border=rounded",
+                f"--input-label={count_label}",
+                "--preview-border=line",
+                "--preview-label= Preview ",
+            ]
+        )
     if fzf_ver >= (0, 60, 0):
         flags.extend(["--bind", "ctrl-x:exclude"])
     # Note: toggle-raw is incompatible with --disabled mode (all items are "matching")
@@ -697,15 +721,21 @@ def _build_version_gated_flags(fzf_ver: tuple[int, ...], vault_dir: Path) -> lis
 
 
 def _build_footer(fzf_ver: tuple[int, ...], db_path: Path | None) -> str:
-    """Build version-gated footer string. Returns empty string if fzf < 0.53."""
+    """Build version-gated footer string. Returns empty string if fzf < 0.53.
+
+    Two lines, both fit within 66 chars (80-col terminal minus fzf chrome).
+    Mid-dots (·) group related keybindings visually.
+    """
     if fzf_ver < (0, 53, 0):
         return ""
-    # Footer must fit ~66 usable chars (80-col terminal minus fzf borders)
-    line1 = "^o open ^y copy ^e export ^/ prev  esc quit"
+    # Line 1: actions — 66 chars max
     if fzf_ver >= (0, 60, 0):
-        line1 = "^o open ^y copy ^e export ^x excl ^/ prev  esc"
+        line1 = "^o open · ^y copy · ^e export · ^x excl · ^/ prev · esc"
+    else:
+        line1 = "^o open · ^y copy · ^e export · ^/ prev · esc"
+    # Line 2: filters (requires db + transform bindings from 0.45+)
     if db_path and fzf_ver >= (0, 45, 0):
-        line2 = "^t mode ^p project ^d date ^b ★fav ^g show★"
+        line2 = "^t mode · ^p proj · ^d date · ^b ★fav · ^g show★"
         return line2 + "\n" + line1
     return line1
 
@@ -745,14 +775,22 @@ def _run_fzf(
         "--no-mouse",  # disable fzf mouse to allow text selection in preview
         "--height=90%",
         "--layout=reverse",
-        "--border=rounded",
+        # Section borders (--input-border, --preview-border) replace the outer border on 0.58+;
+        # keep --border=rounded as fallback for older fzf
+        "--border=none" if fzf_ver >= (0, 58, 0) else "--border=rounded",
     ]
 
-    # Build color string — enhanced with striped rows when fzf >= 0.62
+    # Build color string — Catppuccin Mocha-inspired 24-bit palette on 0.62+,
+    # 256-color fallback for older fzf
     if fzf_ver >= (0, 62, 0):
         fzf_cmd.append(
-            "--color=bg:-1,alt-bg:237,current-bg:236,header:italic:dim,"
-            "prompt:cyan,pointer:cyan,marker:green,hl:yellow,hl+:yellow:bold"
+            "--color=bg:-1,fg:#cdd6f4,fg+:#cdd6f4,bg+:#45475a,"
+            "hl:#cba6f7,hl+:#fab387:bold,info:#6c7086,"
+            "prompt:#b4befe,pointer:#b4befe,marker:#a6e3a1,"
+            "header:#a6adc8:italic,border:#585b70,separator:#585b70,"
+            "gutter:-1,scrollbar:#585b70,preview-border:#585b70,"
+            "label:#a6adc8,preview-label:#a6adc8,query:#cdd6f4,"
+            "alt-bg:#313244"
         )
     else:
         fzf_cmd.append("--color=header:italic:dim,prompt:cyan,pointer:cyan,marker:green")
@@ -795,7 +833,7 @@ def _run_fzf(
         ]
     )
 
-    fzf_cmd.extend(_build_version_gated_flags(fzf_ver, vault_dir))
+    fzf_cmd.extend(_build_version_gated_flags(fzf_ver, vault_dir, conv_count=len(lines)))
     footer = _build_footer(fzf_ver, db_path)
     if footer:
         fzf_cmd.append(f"--footer={footer}")
