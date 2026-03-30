@@ -45,7 +45,7 @@ USE ALWAYS THE PLUGIN "development-skills" FOR EVERY TASK ON THIS PROJECT (BRAIN
 | **Language** | Python 3.10+, zero runtime deps |
 | **Entry points** | `promptvault` → `search:main`, `promptvault-sync` → `sync:main` |
 | **Source** | `promptvault/sync.py`, `promptvault/search.py`, `promptvault/hook.py` |
-| **Tests** | `tests/` — 341 tests, pytest, synthetic data only |
+| **Tests** | `tests/` — 340 tests, pytest, synthetic data only |
 | **Lint/Format** | ruff (line-length=100) |
 | **Python env** | `/opt/anaconda3/envs/promptvault` |
 
@@ -56,6 +56,8 @@ conversations(session_id PK, name, display_name, project, start_ts, end_ts, prom
 prompts(id PK, session_id FK, prompt_text, timestamp, project, seq)
 prompts_fts USING fts5(prompt_text, content=prompts)  -- BM25 ranking
 ```
+
+**FTS5 gotcha:** Queries are sanitized via `_fts_tokenize()` before MATCH. Hyphens become spaces (`best-pr` → `best pr*`), slashes and other FTS5 operators (`/ " + * ( ) ^ ~ :`) are stripped. Without this, FTS5 throws syntax errors or returns wrong results silently.
 
 ### Tags Schema (tags.db — separate, survives sync rebuilds)
 
