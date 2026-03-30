@@ -10,7 +10,7 @@
   </defs>
 
   <!-- Window frame -->
-  <rect width="960" height="780" rx="10" fill="#1e1e1e"/>
+  <rect width="960" height="780" rx="10" fill="#1e1e2e"/>
 
   <!-- Title bar -->
   <rect width="960" height="32" rx="10" fill="url(#titlebar-bg)"/>
@@ -22,121 +22,141 @@
   <circle cx="60" cy="16" r="6" fill="#28c840"/>
 
   <!-- Title -->
-  <text x="480" y="20" text-anchor="middle" fill="#c5c8c6" font-size="13" font-weight="bold">promptvault</text>
+  <text x="480" y="20" text-anchor="middle" fill="#cdd6f4" font-size="13" font-weight="bold">promptvault</text>
 
   <g clip-path="url(#terminal-clip)">
-  <!-- Terminal content area -->
-  <g transform="translate(16, 44)" fill="#c5c8c6" font-size="13">
+  <g transform="translate(16, 44)" fill="#cdd6f4" font-size="13">
 
     <!-- Shell prompt -->
-    <text y="14"><tspan fill="#6b8e9e">~/projects/</tspan><tspan fill="#68a0b3" font-weight="bold">myapp</tspan><tspan fill="#6b8e9e"> main</tspan><tspan fill="#868887"> &gt; </tspan><tspan fill="#98a84b">pv</tspan></text>
-    <text y="32" fill="#868887">Syncing... done.</text>
+    <text y="14"><tspan fill="#6c7086">~/projects/</tspan><tspan fill="#b4befe" font-weight="bold">myapp</tspan><tspan fill="#6c7086"> main</tspan><tspan fill="#585b70"> &gt; </tspan><tspan fill="#a6e3a1">pv</tspan></text>
+    <text y="32" fill="#6c7086">Syncing... done.</text>
 
-    <!-- Top pane border -->
-    <rect x="4" y="46" width="920" height="232" rx="2" fill="none" stroke="#444" stroke-width="1"/>
+    <!-- Input section border (rounded top) -->
+    <rect x="4" y="46" width="920" height="1" fill="#585b70"/>
+    <path d="M4,47 Q4,46 5,46 L919,46 Q920,46 920,47 L920,99 L4,99 Z" fill="none" stroke="#585b70" stroke-width="1"/>
+    <!-- Input label -->
+    <text x="350" y="44" fill="#a6adc8" font-size="11"> 156 conversations </text>
 
-    <!-- FZF header area -->
-    <g transform="translate(14, 58)">
+    <!-- FZF input area -->
+    <g transform="translate(14, 52)">
       <!-- Search line -->
-      <text y="14"><tspan fill="#68a0b3">conv&gt; </tspan><tspan fill="#c5c8c6">docker networking</tspan></text>
-      <text y="32" fill="#868887">  8/156 (0)</text>
-      <text y="50" fill="#6b8e9e" font-style="italic">  156 conversations</text>
+      <text y="14"><tspan fill="#b4befe">conv&gt; </tspan><tspan fill="#cdd6f4">docker networking</tspan></text>
+      <text y="32" fill="#6c7086">  8/156 (0)</text>
+    </g>
 
+    <!-- Input border bottom -->
+    <rect x="4" y="98" width="920" height="1" fill="#585b70"/>
+
+    <!-- Result list area -->
+    <g transform="translate(14, 108)">
       <!-- Selected row (highlighted) -->
-      <rect x="-6" y="56" width="904" height="18" fill="#2a5a8a" rx="1"/>
-      <text y="70" font-weight="bold">
-        <tspan fill="#c5c8c6">  03-25 14:30</tspan>
-        <tspan fill="#c5c8c6" dx="8">8p</tspan>
-        <tspan fill="#98a84b" dx="8">my-webapp</tspan>
-        <tspan fill="#ffffff" dx="32" font-weight="bold">Set up docker networking for</tspan>
+      <rect x="-6" y="-4" width="904" height="20" fill="#45475a" rx="1"/>
+      <text y="12">
+        <tspan fill="#a6e3a1">★</tspan>
+        <tspan fill="#6c7086" dx="4">03-25 14:30</tspan>
+        <tspan fill="#6c7086" dx="6">8p</tspan>
+        <tspan fill="#b4befe" dx="6">my-webapp       </tspan>
+        <tspan fill="#cdd6f4" dx="4">Set up </tspan><tspan fill="#fab387" font-weight="bold">docker networking</tspan><tspan fill="#cdd6f4"> for</tspan>
       </text>
 
-      <!-- Conversation rows -->
-      <text y="88">
-        <tspan fill="#868887">      03-25 10:15</tspan>
-        <tspan fill="#868887" dx="8">3p</tspan>
-        <tspan fill="#98a84b" dx="8">my-webapp</tspan>
-        <tspan fill="#c5c8c6" dx="32">Debug docker compose ports</tspan>
+      <!-- Conversation rows with alternating bg -->
+      <rect x="-6" y="18" width="904" height="18" fill="#313244" rx="0"/>
+      <text y="30">
+        <tspan fill="#1e1e2e">  </tspan>
+        <tspan fill="#6c7086" dx="4">03-25 10:15</tspan>
+        <tspan fill="#6c7086" dx="6">3p</tspan>
+        <tspan fill="#b4befe" dx="6">my-webapp       </tspan>
+        <tspan fill="#cdd6f4" dx="4">Debug </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> compose ports</tspan>
       </text>
-      <text y="106">
-        <tspan fill="#868887">      03-24 22:40</tspan>
-        <tspan fill="#868887" dx="4">12p</tspan>
-        <tspan fill="#98a84b" dx="8">infra</tspan>
-        <tspan fill="#c5c8c6" dx="76">Migrate to docker swarm</tspan>
+      <text y="50">
+        <tspan fill="#1e1e2e">  </tspan>
+        <tspan fill="#6c7086" dx="4">03-24 22:40</tspan>
+        <tspan fill="#6c7086" dx="4">12p</tspan>
+        <tspan fill="#b4befe" dx="4">infra           </tspan>
+        <tspan fill="#cdd6f4" dx="4">Migrate to </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> swarm</tspan>
       </text>
-      <text y="124">
-        <tspan fill="#868887">      03-24 16:05</tspan>
-        <tspan fill="#868887" dx="8">5p</tspan>
-        <tspan fill="#98a84b" dx="8">my-webapp</tspan>
-        <tspan fill="#c5c8c6" dx="32">Docker healthcheck not working</tspan>
+      <rect x="-6" y="54" width="904" height="18" fill="#313244" rx="0"/>
+      <text y="68">
+        <tspan fill="#1e1e2e">  </tspan>
+        <tspan fill="#6c7086" dx="4">03-24 16:05</tspan>
+        <tspan fill="#6c7086" dx="6">5p</tspan>
+        <tspan fill="#b4befe" dx="6">my-webapp       </tspan>
+        <tspan fill="#cdd6f4" dx="4"><tspan fill="#cba6f7">Docker</tspan> healthcheck not working</tspan>
       </text>
-      <text y="142">
-        <tspan fill="#868887">      03-23 11:20</tspan>
-        <tspan fill="#868887" dx="8">2p</tspan>
-        <tspan fill="#d0b344" dx="8">~</tspan>
-        <tspan fill="#c5c8c6" dx="112">How does docker networking</tspan>
+      <text y="86">
+        <tspan fill="#a6e3a1">★</tspan>
+        <tspan fill="#6c7086" dx="4">03-23 11:20</tspan>
+        <tspan fill="#6c7086" dx="6">2p</tspan>
+        <tspan fill="#b4befe" dx="6">~               </tspan>
+        <tspan fill="#cdd6f4" dx="4">How does </tspan><tspan fill="#cba6f7">docker networking</tspan><tspan fill="#cdd6f4"> work</tspan>
       </text>
-      <text y="160">
-        <tspan fill="#868887">      03-22 09:45</tspan>
-        <tspan fill="#868887" dx="8">7p</tspan>
-        <tspan fill="#98a84b" dx="8">backend-api</tspan>
-        <tspan fill="#c5c8c6" dx="18">Add docker support to CI</tspan>
+      <rect x="-6" y="90" width="904" height="18" fill="#313244" rx="0"/>
+      <text y="104">
+        <tspan fill="#1e1e2e">  </tspan>
+        <tspan fill="#6c7086" dx="4">03-22 09:45</tspan>
+        <tspan fill="#6c7086" dx="6">7p</tspan>
+        <tspan fill="#b4befe" dx="6">backend-api     </tspan>
+        <tspan fill="#cdd6f4" dx="4">Add </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> support to CI</tspan>
       </text>
-      <text y="178">
-        <tspan fill="#868887">      03-21 17:30</tspan>
-        <tspan fill="#868887" dx="8">4p</tspan>
-        <tspan fill="#98a84b" dx="8">infra</tspan>
-        <tspan fill="#c5c8c6" dx="76">Docker registry auth setup</tspan>
+      <text y="122">
+        <tspan fill="#1e1e2e">  </tspan>
+        <tspan fill="#6c7086" dx="4">03-21 17:30</tspan>
+        <tspan fill="#6c7086" dx="6">4p</tspan>
+        <tspan fill="#b4befe" dx="6">infra           </tspan>
+        <tspan fill="#cdd6f4" dx="4"><tspan fill="#cba6f7">Docker</tspan> registry auth setup</tspan>
       </text>
-      <text y="196">
-        <tspan fill="#868887">      03-20 14:10</tspan>
-        <tspan fill="#868887" dx="4">15p</tspan>
-        <tspan fill="#98a84b" dx="8">my-webapp</tspan>
-        <tspan fill="#c5c8c6" dx="32">Containerize the app with</tspan>
+      <rect x="-6" y="126" width="904" height="18" fill="#313244" rx="0"/>
+      <text y="140">
+        <tspan fill="#1e1e2e">  </tspan>
+        <tspan fill="#6c7086" dx="4">03-20 14:10</tspan>
+        <tspan fill="#6c7086" dx="4">15p</tspan>
+        <tspan fill="#b4befe" dx="4">my-webapp       </tspan>
+        <tspan fill="#cdd6f4" dx="4">Containerize the app with</tspan>
       </text>
     </g>
 
-    <!-- Keybinding help -->
-    <g transform="translate(14, 286)">
-      <text y="0" fill="#868887" font-size="12">ctrl-t mode | ctrl-p project | ctrl-d date</text>
-      <text y="16" fill="#868887" font-size="12">enter open | ctrl-y copy | ctrl-e export | ctrl-/ preview | tab select | esc quit</text>
-      <text y="32" fill="#868887" font-size="12">shift-up/down scroll preview</text>
+    <!-- Footer (keybinding hints with · separators) -->
+    <g transform="translate(14, 268)">
+      <text y="0" fill="#6c7086" font-size="12">^t mode · ^p proj · ^d date · ^b ★fav · ^g show★</text>
+      <text y="16" fill="#6c7086" font-size="12">^o open · ^y copy · ^e export · ^x excl · ^/ prev · esc</text>
     </g>
 
-    <!-- Bottom pane border -->
-    <rect x="4" y="324" width="920" height="396" rx="2" fill="none" stroke="#444" stroke-width="1"/>
+    <!-- Preview separator line -->
+    <line x1="4" y1="300" x2="924" y2="300" stroke="#585b70" stroke-width="1"/>
+    <!-- Preview label -->
+    <text x="440" y="298" fill="#a6adc8" font-size="11"> Preview </text>
 
     <!-- Preview content -->
-    <g transform="translate(14, 340)">
+    <g transform="translate(14, 316)">
       <!-- Title -->
-      <text y="14" fill="#c5c8c6" font-weight="bold" font-size="14"># Set up docker networking for the staging environment</text>
-      <text y="34" fill="#868887">
+      <text y="14" fill="#cdd6f4" font-weight="bold" font-size="14"># Set up docker networking for the staging environment</text>
+      <text y="34" fill="#6c7086">
         <tspan font-weight="bold">**Project:**</tspan>
-        <tspan> my-webapp  </tspan>
+        <tspan fill="#a6adc8"> my-webapp  </tspan>
         <tspan font-weight="bold">**Duration:**</tspan>
-        <tspan> 45 min  </tspan>
+        <tspan fill="#a6adc8"> 45 min  </tspan>
         <tspan font-weight="bold">**Prompts:**</tspan>
-        <tspan> 8</tspan>
+        <tspan fill="#a6adc8"> 8</tspan>
       </text>
 
       <!-- Separator -->
-      <line x1="0" y1="46" x2="900" y2="46" stroke="#555" stroke-width="1"/>
+      <line x1="0" y1="46" x2="900" y2="46" stroke="#585b70" stroke-width="1"/>
 
       <!-- Prompt 1 -->
-      <text y="70" fill="#a92a59" font-weight="bold">## Prompt 1 — 14:30:12</text>
-      <text y="94" fill="#c5c8c6">I need to set up <tspan font-weight="bold" fill="#d0b344">docker networking</tspan> between three containers: a postgres</text>
-      <text y="112" fill="#c5c8c6">database, a redis cache, and my node.js API. They should be on the same</text>
-      <text y="130" fill="#c5c8c6">network but postgres should not be reachable from outside.</text>
+      <text y="70" fill="#cba6f7" font-weight="bold">## Prompt 1 — 14:30:12</text>
+      <text y="94" fill="#cdd6f4">I need to set up <tspan font-weight="bold" fill="#fab387">docker networking</tspan> between three containers: a postgres</text>
+      <text y="112" fill="#cdd6f4">database, a redis cache, and my node.js API. They should be on the same</text>
+      <text y="130" fill="#cdd6f4">network but postgres should not be reachable from outside.</text>
 
       <!-- Prompt 2 -->
-      <text y="162" fill="#a92a59" font-weight="bold">## Prompt 2 — 14:35:48</text>
-      <text y="186" fill="#c5c8c6">The compose file works but the API container can't resolve the postgres</text>
-      <text y="204" fill="#c5c8c6">hostname. I'm getting ECONNREFUSED. Here's my docker-compose.yml:</text>
+      <text y="162" fill="#cba6f7" font-weight="bold">## Prompt 2 — 14:35:48</text>
+      <text y="186" fill="#cdd6f4">The compose file works but the API container can't resolve the postgres</text>
+      <text y="204" fill="#cdd6f4">hostname. I'm getting ECONNREFUSED. Here's my docker-compose.yml:</text>
 
       <!-- Prompt 3 -->
-      <text y="236" fill="#a92a59" font-weight="bold">## Prompt 3 — 14:42:15</text>
-      <text y="260" fill="#c5c8c6">Now I want to add a reverse proxy with nginx. How do I configure the</text>
-      <text y="278" fill="#c5c8c6"><tspan font-weight="bold" fill="#d0b344">docker network</tspan> so nginx can reach the API but not the database directly?</text>
+      <text y="236" fill="#cba6f7" font-weight="bold">## Prompt 3 — 14:42:15</text>
+      <text y="260" fill="#cdd6f4">Now I want to add a reverse proxy with nginx. How do I configure the</text>
+      <text y="278" fill="#cdd6f4"><tspan font-weight="bold" fill="#fab387">docker network</tspan> so nginx can reach the API but not the database directly?</text>
     </g>
 
   </g>

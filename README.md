@@ -91,16 +91,33 @@ All commands launch **fzf** by default (split pane: conversation list + live pre
 | Key | Action |
 |-----|--------|
 | `Enter` | Open in `$EDITOR` (returns to fzf) |
+| `Ctrl-O` | Open in `$EDITOR` (exits fzf) |
 | `Ctrl-T` | Toggle conversation / prompt view |
 | `Ctrl-P` | Cycle project filter |
 | `Ctrl-D` | Cycle date range (all/today/week/month) |
+| `Ctrl-B` | Toggle bookmark on selected conversation |
+| `Ctrl-G` | Show only bookmarked conversations |
 | `Ctrl-Y` | Copy to clipboard |
 | `Ctrl-E` | Export to file (save dialog) |
+| `Ctrl-X` | Exclude from results |
 | `Ctrl-/` | Toggle preview |
 | `Tab` | Multi-select |
 | `Esc` | Quit |
 
 > Full documentation: [docs/usage.md](docs/usage.md)
+
+---
+
+## Shell Widget
+
+Insert a previous prompt directly into your command line with `Alt-P`:
+
+```bash
+# Add to your shell config:
+eval "$(pv shell-init zsh)"    # or bash
+```
+
+Customise the key with `PROMPTVAULT_WIDGET_KEY` (default: `\ep` = Alt-P).
 
 ---
 
@@ -162,7 +179,7 @@ Open as an Obsidian vault. The Calendar plugin works well for browsing.
 
 ## Contributing
 
-Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md). 293 tests, all synthetic data.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md). 340 tests, all synthetic data.
 
 ```bash
 git clone https://github.com/reidemeister94/promptvault.git
