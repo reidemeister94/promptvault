@@ -7,6 +7,10 @@ from pathlib import Path
 
 import pytest
 
+# pytest uses this module-level variable to skip files during collection;
+# pyproject.toml's [tool.pytest.ini_options] does NOT support collect_ignore.
+collect_ignore = ["visual_test.py"]
+
 
 @pytest.fixture
 def tmp_history(tmp_path: Path) -> Path:
