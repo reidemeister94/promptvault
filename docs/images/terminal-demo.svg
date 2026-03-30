@@ -47,71 +47,66 @@
     <!-- Input border bottom -->
     <rect x="4" y="98" width="920" height="1" fill="#585b70"/>
 
-    <!-- Result list area -->
+    <!-- Result list area — fixed x positions for pixel-perfect column alignment -->
+    <!-- Columns: star@0, date@20, count@112, project@148, title@290 -->
     <g transform="translate(14, 108)">
       <!-- Selected row (highlighted) -->
       <rect x="-6" y="-4" width="904" height="20" fill="#45475a" rx="1"/>
       <text y="12">
-        <tspan fill="#a6e3a1">★</tspan>
-        <tspan fill="#6c7086" dx="4">03-25 14:30</tspan>
-        <tspan fill="#6c7086" dx="6">8p</tspan>
-        <tspan fill="#b4befe" dx="6">my-webapp       </tspan>
-        <tspan fill="#cdd6f4" dx="4">Set up </tspan><tspan fill="#fab387" font-weight="bold">docker networking</tspan><tspan fill="#cdd6f4"> for</tspan>
+        <tspan x="0" fill="#a6e3a1">★</tspan>
+        <tspan x="20" fill="#6c7086">03-25 14:30</tspan>
+        <tspan x="112" fill="#6c7086">8p</tspan>
+        <tspan x="148" fill="#b4befe">my-webapp</tspan>
+        <tspan x="290" fill="#cdd6f4">Set up </tspan><tspan fill="#fab387" font-weight="bold">docker networking</tspan><tspan fill="#cdd6f4"> for</tspan>
       </text>
 
       <!-- Conversation rows with alternating bg -->
       <rect x="-6" y="18" width="904" height="18" fill="#313244" rx="0"/>
       <text y="30">
-        <tspan fill="#1e1e2e">  </tspan>
-        <tspan fill="#6c7086" dx="4">03-25 10:15</tspan>
-        <tspan fill="#6c7086" dx="6">3p</tspan>
-        <tspan fill="#b4befe" dx="6">my-webapp       </tspan>
-        <tspan fill="#cdd6f4" dx="4">Debug </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> compose ports</tspan>
+        <tspan x="20" fill="#6c7086">03-25 10:15</tspan>
+        <tspan x="112" fill="#6c7086">3p</tspan>
+        <tspan x="148" fill="#b4befe">my-webapp</tspan>
+        <tspan x="290" fill="#cdd6f4">Debug </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> compose ports</tspan>
       </text>
       <text y="50">
-        <tspan fill="#1e1e2e">  </tspan>
-        <tspan fill="#6c7086" dx="4">03-24 22:40</tspan>
-        <tspan fill="#6c7086" dx="4">12p</tspan>
-        <tspan fill="#b4befe" dx="4">infra           </tspan>
-        <tspan fill="#cdd6f4" dx="4">Migrate to </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> swarm</tspan>
+        <tspan x="20" fill="#6c7086">03-24 22:40</tspan>
+        <tspan x="112" fill="#6c7086">12p</tspan>
+        <tspan x="148" fill="#b4befe">infra</tspan>
+        <tspan x="290" fill="#cdd6f4">Migrate to </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> swarm</tspan>
       </text>
       <rect x="-6" y="54" width="904" height="18" fill="#313244" rx="0"/>
       <text y="68">
-        <tspan fill="#1e1e2e">  </tspan>
-        <tspan fill="#6c7086" dx="4">03-24 16:05</tspan>
-        <tspan fill="#6c7086" dx="6">5p</tspan>
-        <tspan fill="#b4befe" dx="6">my-webapp       </tspan>
-        <tspan fill="#cdd6f4" dx="4"><tspan fill="#cba6f7">Docker</tspan> healthcheck not working</tspan>
+        <tspan x="20" fill="#6c7086">03-24 16:05</tspan>
+        <tspan x="112" fill="#6c7086">5p</tspan>
+        <tspan x="148" fill="#b4befe">my-webapp</tspan>
+        <tspan x="290" fill="#cdd6f4"><tspan fill="#cba6f7">Docker</tspan> healthcheck not working</tspan>
       </text>
       <text y="86">
-        <tspan fill="#a6e3a1">★</tspan>
-        <tspan fill="#6c7086" dx="4">03-23 11:20</tspan>
-        <tspan fill="#6c7086" dx="6">2p</tspan>
-        <tspan fill="#b4befe" dx="6">~               </tspan>
-        <tspan fill="#cdd6f4" dx="4">How does </tspan><tspan fill="#cba6f7">docker networking</tspan><tspan fill="#cdd6f4"> work</tspan>
+        <tspan x="0" fill="#a6e3a1">★</tspan>
+        <tspan x="20" fill="#6c7086">03-23 11:20</tspan>
+        <tspan x="112" fill="#6c7086">2p</tspan>
+        <tspan x="148" fill="#b4befe">~</tspan>
+        <tspan x="290" fill="#cdd6f4">How does </tspan><tspan fill="#cba6f7">docker networking</tspan><tspan fill="#cdd6f4"> work</tspan>
       </text>
       <rect x="-6" y="90" width="904" height="18" fill="#313244" rx="0"/>
       <text y="104">
-        <tspan fill="#1e1e2e">  </tspan>
-        <tspan fill="#6c7086" dx="4">03-22 09:45</tspan>
-        <tspan fill="#6c7086" dx="6">7p</tspan>
-        <tspan fill="#b4befe" dx="6">backend-api     </tspan>
-        <tspan fill="#cdd6f4" dx="4">Add </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> support to CI</tspan>
+        <tspan x="20" fill="#6c7086">03-22 09:45</tspan>
+        <tspan x="112" fill="#6c7086">7p</tspan>
+        <tspan x="148" fill="#b4befe">backend-api</tspan>
+        <tspan x="290" fill="#cdd6f4">Add </tspan><tspan fill="#cba6f7">docker</tspan><tspan fill="#cdd6f4"> support to CI</tspan>
       </text>
       <text y="122">
-        <tspan fill="#1e1e2e">  </tspan>
-        <tspan fill="#6c7086" dx="4">03-21 17:30</tspan>
-        <tspan fill="#6c7086" dx="6">4p</tspan>
-        <tspan fill="#b4befe" dx="6">infra           </tspan>
-        <tspan fill="#cdd6f4" dx="4"><tspan fill="#cba6f7">Docker</tspan> registry auth setup</tspan>
+        <tspan x="20" fill="#6c7086">03-21 17:30</tspan>
+        <tspan x="112" fill="#6c7086">4p</tspan>
+        <tspan x="148" fill="#b4befe">infra</tspan>
+        <tspan x="290" fill="#cdd6f4"><tspan fill="#cba6f7">Docker</tspan> registry auth setup</tspan>
       </text>
       <rect x="-6" y="126" width="904" height="18" fill="#313244" rx="0"/>
       <text y="140">
-        <tspan fill="#1e1e2e">  </tspan>
-        <tspan fill="#6c7086" dx="4">03-20 14:10</tspan>
-        <tspan fill="#6c7086" dx="4">15p</tspan>
-        <tspan fill="#b4befe" dx="4">my-webapp       </tspan>
-        <tspan fill="#cdd6f4" dx="4">Containerize the app with</tspan>
+        <tspan x="20" fill="#6c7086">03-20 14:10</tspan>
+        <tspan x="112" fill="#6c7086">15p</tspan>
+        <tspan x="148" fill="#b4befe">my-webapp</tspan>
+        <tspan x="290" fill="#cdd6f4">Containerize the app with</tspan>
       </text>
     </g>
 
