@@ -1,3 +1,13 @@
+## 0.0.11 (2026-07-10)
+
+### Feat
+
+- support Codex CLI conversations alongside Claude Code
+
+### Fix
+
+- align docs
+
 ## 0.0.10 (2026-03-30)
 
 ## 0.0.9 (2026-03-30)
