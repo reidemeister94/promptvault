@@ -38,6 +38,7 @@ KEY_MAP = {
     "ctrl-d": "\x04",
     "ctrl-g": "\x07",
     "ctrl-b": "\x02",
+    "ctrl-s": "\x13",
     "ctrl-o": "\x0f",
     "ctrl-x": "\x18",
     "ctrl-y": "\x19",

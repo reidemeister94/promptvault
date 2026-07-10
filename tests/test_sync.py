@@ -199,6 +199,17 @@ class TestMakeConversationName:
         assert name == "session-abcdef12"
 
 
+class TestGenerateMarkdownSource:
+    def test_claude_markdown_tagged_claude_code(self, tmp_history: Path):
+        from promptvault.sync import generate_markdown
+
+        sessions = parse_history(tmp_history)
+        sid = "aaaa-1111-2222-3333"
+        md = generate_markdown(sid, sessions[sid], "name")
+        assert "source: claude-code" in md
+        assert "  - claude-code" in md
+
+
 class TestGenerateVault:
     def test_creates_markdown_files(self, tmp_history: Path, tmp_output: Path):
         sessions = parse_history(tmp_history)
@@ -272,6 +283,18 @@ class TestBuildDatabase:
         conn = sqlite3.connect(str(db_path))
         count = conn.execute("SELECT COUNT(*) FROM conversations").fetchone()[0]
         assert count == 4
+
+    def test_source_column_defaults_to_claude(self, tmp_history: Path, tmp_output: Path):
+        import sqlite3
+
+        sessions = parse_history(tmp_history)
+        md_paths = {sid: f"fake/{sid}.md" for sid in sessions}
+        db_path = tmp_output / "prompts.db"
+        build_database(sessions, md_paths, db_path)
+
+        conn = sqlite3.connect(str(db_path))
+        sources = {r[0] for r in conn.execute("SELECT DISTINCT source FROM conversations")}
+        assert sources == {"claude-code"}
 
     def test_fts_search_works(self, tmp_history: Path, tmp_output: Path):
         import sqlite3

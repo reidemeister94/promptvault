@@ -38,6 +38,16 @@ RESET = "\033[0m"
 LAVENDER = "\033[38;2;180;190;254m"
 # 24-bit green for bookmarked star (matches fzf marker color)
 GREEN_24 = "\033[38;2;166;227;161m"
+# 24-bit agent-source badges: Mauve = Claude Code, Peach = Codex
+MAUVE = "\033[38;2;203;166;247m"
+PEACH = "\033[38;2;250;179;135m"
+
+
+def _source_badge(source: str) -> str:
+    """Compact colored agent badge for result lines (cc = Claude Code, cx = Codex)."""
+    if source == "codex":
+        return f"{PEACH}cx{RESET}"
+    return f"{MAUVE}cc{RESET}"
 
 
 # ---------------------------------------------------------------------------
@@ -102,13 +112,24 @@ def _get_tagged_sessions(conn: sqlite3.Connection, tag: str) -> list[str]:
 
 
 def _auto_sync_if_stale(db_path: Path):
-    """Run sync if history.jsonl is newer than the DB (or DB doesn't exist)."""
+    """Run sync if any source (Claude history or Codex sessions) is newer than the DB."""
     history_path = Path(
         os.environ.get("PROMPTVAULT_HISTORY", str(Path.home() / ".claude" / "history.jsonl"))
     )
-    if not history_path.exists():
+    codex_dir = Path(
+        os.environ.get("PROMPTVAULT_CODEX_SESSIONS", str(Path.home() / ".codex" / "sessions"))
+    )
+    source_mtime = 0.0
+    if history_path.exists():
+        source_mtime = max(source_mtime, history_path.stat().st_mtime)
+    if codex_dir.exists():
+        source_mtime = max(
+            source_mtime,
+            max((p.stat().st_mtime for p in codex_dir.glob("**/rollout-*.jsonl")), default=0.0),
+        )
+    if source_mtime == 0.0:
         return
-    needs_sync = not db_path.exists() or history_path.stat().st_mtime > db_path.stat().st_mtime
+    needs_sync = not db_path.exists() or source_mtime > db_path.stat().st_mtime
     if needs_sync:
         from promptvault.sync import main as sync_main
 
@@ -237,6 +258,7 @@ def _build_conversation_lines(
     project: str | None = None,
     date_range: str | None = None,
     tag: str | None = None,
+    source: str | None = None,
     db_path: Path | None = None,
 ) -> list[str]:
     """Build conversation lines for fzf. Format: 'md_path\\tdate  Np  project  title\\tsession_id'.
@@ -245,6 +267,7 @@ def _build_conversation_lines(
     - project: partial match on conversation project path
     - date_range: 'today', 'week', or 'month' preset
     - tag: filter to sessions with this tag (requires db_path for tags.db)
+    - source: exact match on agent source ('claude-code' or 'codex')
     """
     if query:
         # Find conversations that contain matching prompts
@@ -273,10 +296,14 @@ def _build_conversation_lines(
         tag_placeholders = ",".join("?" * len(tagged_ids))
         where += f" AND session_id IN ({tag_placeholders})"
         params.extend(tagged_ids)
+    if source:
+        where += " AND source = ?"
+        params.append(source)
 
     rows = conn.execute(
         f"""
-        SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
+        SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts,
+               prompt_count, md_path, source
         FROM conversations
         WHERE {where}
         ORDER BY start_ts DESC
@@ -293,17 +320,19 @@ def _build_conversation_lines(
             pass
 
     lines = []
-    for sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
+    for sid, display_name, project, start_ts, _end_ts, prompt_count, md_path, source in rows:
         proj = _short_project(project)
         date_str = ts_to_short(start_ts)
         title = _short_title(display_name)
+        badge = _source_badge(source)
         # Color the star green when bookmarked; keep padding space when not
         star_colored = f"{GREEN_24}★{RESET} " if sid in fav_ids else "  "
         proj_colored = f"{LAVENDER}{proj:16s}{RESET}"
         # Field 1: md_path (hidden), Field 2: visible display, Field 3: session_id (hidden, for tags)
         line = (
             f"{md_path}\t"
-            f"{star_colored}{DIM}{date_str}  {prompt_count:2d}p{RESET}  {proj_colored}  {title}"
+            f"{star_colored}{DIM}{date_str}  {prompt_count:2d}p{RESET}  {badge}  "
+            f"{proj_colored}  {title}"
             f"\t{sid}"
         )
         lines.append(line)
@@ -324,7 +353,7 @@ def _build_prompt_lines(conn: sqlite3.Connection, query: str | None = None) -> l
         rows = conn.execute(
             """
             SELECT p.prompt_text, p.timestamp, p.project,
-                   COALESCE(c.display_name, c.name), c.md_path, 0 as rank
+                   COALESCE(c.display_name, c.name), c.md_path, c.source, 0 as rank
             FROM prompts p
             JOIN conversations c ON p.session_id = c.session_id
             WHERE p.prompt_text NOT GLOB '/[a-z]*'
@@ -336,12 +365,13 @@ def _build_prompt_lines(conn: sqlite3.Connection, query: str | None = None) -> l
         ).fetchall()
 
     lines = []
-    for prompt_text, ts, project, _conv_name, md_path, _rank in rows:
+    for prompt_text, ts, project, _conv_name, md_path, source, _rank in rows:
         proj = _short_project(project)
         date_str = ts_to_short(ts)
         prompt_short = truncate(prompt_text, max_len=80)
+        badge = _source_badge(source)
         proj_colored = f"{LAVENDER}{proj:16s}{RESET}"
-        line = f"{md_path}\t{DIM}{date_str}{RESET}  {proj_colored}  {prompt_short}"
+        line = f"{md_path}\t{DIM}{date_str}{RESET}  {badge}  {proj_colored}  {prompt_short}"
         lines.append(line)
     return lines
 
@@ -685,6 +715,25 @@ def _build_transform_bindings(pv_bin: str, db_path: Path) -> list[str]:
     )
     bindings.extend(["--bind", f"ctrl-g:transform:{ctrl_g_script}"])
 
+    # ctrl-s: cycle agent source filter (all → Claude Code → Codex → all)
+    reload_all_s = f"{pv_bin} --db {db_path} _fzf-lines {{q}}"
+    reload_claude = f"{pv_bin} --db {db_path} _fzf-lines --source claude-code {{q}}"
+    reload_codex = f"{pv_bin} --db {db_path} _fzf-lines --source codex {{q}}"
+    ctrl_s_script = (
+        f'p="$FZF_PROMPT"; '
+        f'if echo "$p" | grep -q "cc]"; then '
+        f'echo "change-prompt(conv [cx]> )+reload({reload_codex} 2>/dev/null || true)'
+        f'+change-header(Codex only)"; '
+        f'elif echo "$p" | grep -q "cx]"; then '
+        f'echo "change-prompt(conv> )+reload({reload_all_s} 2>/dev/null || true)'
+        f'+change-header(All sources)"; '
+        f"else "
+        f'echo "change-prompt(conv [cc]> )+reload({reload_claude} 2>/dev/null || true)'
+        f'+change-header(Claude Code only)"; '
+        f"fi"
+    )
+    bindings.extend(["--bind", f"ctrl-s:transform:{ctrl_s_script}"])
+
     return bindings
 
 
@@ -735,7 +784,7 @@ def _build_footer(fzf_ver: tuple[int, ...], db_path: Path | None) -> str:
         line1 = "^o open · ^y copy · ^e export · ^/ prev · esc"
     # Line 2: filters (requires db + transform bindings from 0.45+)
     if db_path and fzf_ver >= (0, 45, 0):
-        line2 = "^t mode · ^p proj · ^d date · ^b ★fav · ^g show★"
+        line2 = "^t mode · ^p proj · ^d date · ^s src · ^b ★fav · ^g show★"
         return line2 + "\n" + line1
     return line1
 
@@ -923,7 +972,7 @@ def _fts_search(conn: sqlite3.Connection, query: str, limit: int = 200) -> list:
     """FTS5 search with OR fallback."""
     sql = """
         SELECT p.prompt_text, p.timestamp, p.project, COALESCE(c.display_name, c.name), c.md_path,
-               bm25(prompts_fts) AS rank
+               c.source, bm25(prompts_fts) AS rank
         FROM prompts_fts
         JOIN prompts p ON prompts_fts.rowid = p.id
         JOIN conversations c ON p.session_id = c.session_id
@@ -954,10 +1003,12 @@ def cmd_search_plain(conn: sqlite3.Connection, query: str, limit: int = 20):
         return
 
     print(f"\n{BOLD}Found {len(rows)} result(s) for '{query}':{RESET}\n")
-    for prompt_text, ts, project, conv_name, _md_path, _rank in rows:
+    for prompt_text, ts, project, conv_name, _md_path, source, _rank in rows:
         project_short = _short_project(project)
         short_name = conv_name[:50] + "..." if len(conv_name) > 50 else conv_name
-        print(f"  {CYAN}{ts_to_str(ts)}{RESET}  {BOLD}{truncate(prompt_text)}{RESET}")
+        print(
+            f"  {CYAN}{ts_to_str(ts)}{RESET}  {_source_badge(source)}  {BOLD}{truncate(prompt_text)}{RESET}"
+        )
         print(f"  {DIM}{short_name} · {project_short}{RESET}")
         print()
 
@@ -993,18 +1044,21 @@ def cmd_recent(args: argparse.Namespace, db_path: Path):
     if not no_fzf and sys.stdout.isatty() and has_fzf():
         rows = conn.execute(
             """
-            SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path
+            SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts,
+                   prompt_count, md_path, source
             FROM conversations WHERE prompt_count > 0 ORDER BY start_ts DESC LIMIT ?
             """,
             (limit,),
         ).fetchall()
         lines = []
-        for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
+        for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path, source in rows:
             proj = _short_project(project)
             date_str = ts_to_short(start_ts)
             title = _short_title(display_name)
+            badge = _source_badge(source)
             lines.append(
-                f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {title}\t{display_name}"
+                f"{md_path}\t{date_str}  {prompt_count:2d}p  {badge}  {proj:16s}  {title}"
+                f"\t{display_name}"
             )
         if not lines:
             print("No conversations found.")
@@ -1045,7 +1099,7 @@ def cmd_list(args: argparse.Namespace, db_path: Path):
     vault_dir = Path(os.environ.get("PROMPTVAULT_VAULT", str(DEFAULT_VAULT_DIR)))
     no_fzf = getattr(args, "no_fzf", False)
 
-    sql = "SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path FROM conversations"
+    sql = "SELECT session_id, COALESCE(display_name, name), project, start_ts, end_ts, prompt_count, md_path, source FROM conversations"
     params: list = []
     conditions: list[str] = ["prompt_count > 0"]
 
@@ -1079,19 +1133,21 @@ def cmd_list(args: argparse.Namespace, db_path: Path):
 
     if not no_fzf and sys.stdout.isatty() and has_fzf():
         lines = []
-        for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path in rows:
+        for _sid, display_name, project, start_ts, _end_ts, prompt_count, md_path, source in rows:
             proj = _short_project(project)
             date_str = ts_to_short(start_ts)
             title = _short_title(display_name)
+            badge = _source_badge(source)
             lines.append(
-                f"{md_path}\t{date_str}  {prompt_count:2d}p  {proj:16s}  {title}\t{display_name}"
+                f"{md_path}\t{date_str}  {prompt_count:2d}p  {badge}  {proj:16s}  {title}"
+                f"\t{display_name}"
             )
         _run_fzf(
             lines, vault_dir, header="Conversations · ↑↓ navigate · enter open", prompt="list> "
         )
     else:
         print(f"\n{BOLD}{len(rows)} conversation(s):{RESET}\n")
-        for _sid, display_name, project, start_ts, end_ts, prompt_count, md_path in rows:
+        for _sid, display_name, project, start_ts, end_ts, prompt_count, md_path, _source in rows:
             project_short = _short_project(project)
             start = ts_to_str(start_ts)
             end_time = datetime.fromtimestamp(end_ts / 1000, tz=timezone.utc).strftime("%H:%M")
@@ -1210,7 +1266,7 @@ def cmd_export(args: argparse.Namespace, db_path: Path) -> None:
 
     if args.format == "json":
         data = []
-        for prompt_text, ts, project, conv_name, md_path, _rank in rows:
+        for prompt_text, ts, project, conv_name, md_path, _source, _rank in rows:
             data.append(
                 {
                     "prompt": prompt_text,
@@ -1225,13 +1281,13 @@ def cmd_export(args: argparse.Namespace, db_path: Path) -> None:
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow(["prompt", "timestamp", "project", "conversation", "md_path"])
-        for prompt_text, ts, project, conv_name, md_path, _rank in rows:
+        for prompt_text, ts, project, conv_name, md_path, _source, _rank in rows:
             writer.writerow([prompt_text, ts, project, conv_name, md_path])
         output = buf.getvalue()
     else:
         # Markdown format
         parts = []
-        for prompt_text, ts, project, conv_name, _md_path, _rank in rows:
+        for prompt_text, ts, project, conv_name, _md_path, _source, _rank in rows:
             parts.append(
                 f"## {ts_to_str(ts)} — {conv_name}\n\n**Project:** {project}\n\n{prompt_text}\n"
             )
@@ -1309,6 +1365,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Filter by date preset",
     )
     fzf_p.add_argument("--tag", default=None, help="Filter by tag")
+    fzf_p.add_argument(
+        "--source",
+        default=None,
+        choices=["claude-code", "codex"],
+        help="Filter by agent source",
+    )
     fzf_p.add_argument("query", nargs="?", default=None)
 
     # hidden: used by fzf reload in prompt mode
@@ -1364,6 +1426,7 @@ def _dispatch_hidden_command(args: argparse.Namespace, db_path: Path) -> bool:
             project=getattr(args, "project", None),
             date_range=getattr(args, "date_range", None),
             tag=getattr(args, "tag", None),
+            source=getattr(args, "source", None),
             db_path=db_path,
         )
         sys.stdout.write("\n".join(lines) + "\n" if lines else "")

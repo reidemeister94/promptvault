@@ -20,10 +20,10 @@ Think critically from first principles; prize simplicity above all. Maximize eff
 
 Always use the `development-skills` plugin for every task on this project (brainstorming, development, bug fixing, new feature, ...). If the plugin is not available on the user's system, notice it and tell the user to download it.
 
-promptvault-py (`pv`) — Python 3.10+ stdlib-only CLI that turns Claude Code history (`~/.claude/history.jsonl`) into a searchable markdown vault + SQLite FTS5 DB, browsed with fzf. Zero runtime deps.
+promptvault-py (`pv`) — Python 3.10+ stdlib-only CLI that turns Claude Code (`~/.claude/history.jsonl`) and Codex (`~/.codex/sessions/**/rollout-*.jsonl`, auto-detected) history into one searchable markdown vault + SQLite FTS5 DB, browsed with fzf. Each conversation carries a `source` (`claude-code`/`codex`) — a DB column, a markdown tag, an fzf badge (`cc`/`cx`), and a `ctrl-s` filter. Zero runtime deps.
 
 - Entry points: `promptvault`/`pv` → `promptvault.search:main`; `promptvault-sync`/`pv-sync` → `promptvault.sync:main`. Source: `promptvault/{sync,search,hook}.py`.
-- Test: `python -m pytest tests/ -v` (340 tests, synthetic data only — never touch real `~/.claude/`). Lint/format: `ruff` (line-length=100).
+- Test: `python -m pytest tests/ -v` (365 tests, synthetic data only — never touch real `~/.claude/` or `~/.codex/`). Lint/format: `ruff` (line-length=100).
 - Docs: plans (HOW) → `docs/plans/`, chronicles (WHY) → `docs/chronicles/`, both named `NNNN__YYYY-MM-DD__<type>__slug.md` and gitignored (local-only); `docs/ATLAS.md` maps them.
 - Machine-specific python env path lives in gitignored `.claude/CLAUDE.md`.
 

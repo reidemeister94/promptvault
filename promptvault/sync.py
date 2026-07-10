@@ -16,6 +16,10 @@ DEFAULT_HISTORY_PATH = Path.home() / ".claude" / "history.jsonl"
 DEFAULT_OUTPUT_DIR = Path.home() / ".claude" / "prompt-library"
 DEFAULT_PROJECTS_DIR = Path.home() / ".claude" / "projects"
 DEFAULT_PASTE_CACHE_DIR = Path.home() / ".claude" / "paste-cache"
+DEFAULT_CODEX_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
+
+SOURCE_CLAUDE = "claude-code"
+SOURCE_CODEX = "codex"
 
 SLASH_COMMANDS = frozenset(
     {
@@ -114,17 +118,96 @@ def parse_history(history_path: Path) -> dict[str, list[dict]]:
             entry = json.loads(line)
             # Resolve pasted content placeholders into actual text
             entry["display"] = resolve_pasted_content(entry)
+            entry["source"] = SOURCE_CLAUDE
             sessions[entry["sessionId"]].append(entry)
-    # Sort prompts within each session by timestamp and deduplicate
-    for session_id in sessions:
-        sessions[session_id].sort(key=lambda e: e["timestamp"])
-        # Remove consecutive duplicates (same text within a session, e.g. double-submit)
-        deduped: list[dict] = []
-        for entry in sessions[session_id]:
-            if not deduped or entry["display"].strip() != deduped[-1]["display"].strip():
-                deduped.append(entry)
-        sessions[session_id] = deduped
-    return dict(sessions)
+    return {sid: _sort_and_dedup(ents) for sid, ents in sessions.items()}
+
+
+def _sort_and_dedup(entries: list[dict]) -> list[dict]:
+    """Sort prompts by timestamp and drop consecutive duplicate texts (double-submits)."""
+    entries.sort(key=lambda e: e["timestamp"])
+    deduped: list[dict] = []
+    for entry in entries:
+        if not deduped or entry["display"].strip() != deduped[-1]["display"].strip():
+            deduped.append(entry)
+    return deduped
+
+
+def _iso_to_ms(iso: str) -> int | None:
+    """Convert an ISO-8601 timestamp (trailing Z or offset) to epoch milliseconds.
+
+    Returns None if unparseable. Fractional seconds are normalized to 6 digits so
+    non-microsecond precision (e.g. nanoseconds, which Python 3.10's fromisoformat
+    rejects) is tolerated instead of aborting the whole sync.
+    """
+    text = iso.strip().replace("Z", "+00:00")
+    m = re.match(r"(.*T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(.*)$", text)
+    if m:
+        base, frac, tz = m.groups()
+        if frac is not None:
+            text = f"{base}.{(frac + '000000')[:6]}{tz}"
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return int(dt.timestamp() * 1000)
+
+
+def parse_codex_sessions(sessions_dir: Path) -> dict[str, list[dict]]:
+    """Parse Codex rollout session files into the same session map as parse_history.
+
+    Reads ``sessions_dir/**/rollout-*.jsonl``. User prompts are ``event_msg`` records
+    whose ``payload.type == 'user_message'``; the project is ``session_meta.payload.cwd``.
+    Files lacking a ``session_meta`` line, and sessions with no user prompt, are skipped;
+    malformed lines are ignored so a corrupt tail never loses a whole file.
+    """
+    sessions: dict[str, list[dict]] = defaultdict(list)
+    if not sessions_dir.exists():
+        return {}
+
+    for path in sorted(sessions_dir.glob("**/rollout-*.jsonl")):
+        session_id = ""
+        project = ""
+        meta_ts_ms = 0
+        entries: list[dict] = []
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                payload = record.get("payload") or {}
+                if record.get("type") == "session_meta":
+                    session_id = payload.get("session_id", "")
+                    project = payload.get("cwd", "")
+                    ts = record.get("timestamp")
+                    meta_ts_ms = (_iso_to_ms(ts) or 0) if ts else 0
+                elif record.get("type") == "event_msg" and payload.get("type") == "user_message":
+                    text = payload.get("message", "")
+                    if not text:
+                        continue
+                    ts = record.get("timestamp")
+                    ts_ms = _iso_to_ms(ts) if ts else None
+                    entries.append(
+                        {
+                            "display": text,
+                            "timestamp": meta_ts_ms if ts_ms is None else ts_ms,
+                            "source": SOURCE_CODEX,
+                        }
+                    )
+        if not session_id or not entries:
+            continue
+        for entry in entries:
+            entry["sessionId"] = session_id
+            entry["project"] = project
+            if not entry["timestamp"]:
+                entry["timestamp"] = meta_ts_ms
+        sessions[session_id].extend(entries)
+
+    return {sid: _sort_and_dedup(ents) for sid, ents in sessions.items()}
 
 
 def is_slash_command(prompt: str) -> bool:
@@ -209,6 +292,7 @@ def generate_markdown(session_id: str, prompts: list[dict], name: str) -> str:
     start_dt = ts_to_datetime(prompts[0]["timestamp"])
     end_dt = ts_to_datetime(prompts[-1]["timestamp"])
     project = prompts[0].get("project", "unknown")
+    source = prompts[0].get("source", SOURCE_CLAUDE)
 
     # Title from first real prompt — clean whitespace
     title_prompt = re.sub(r"\s+", " ", all_prompts[0]["display"]).strip() if all_prompts else name
@@ -224,8 +308,9 @@ def generate_markdown(session_id: str, prompts: list[dict], name: str) -> str:
         f"started: {start_dt.strftime('%Y-%m-%dT%H:%M:%S')}",
         f"ended: {end_dt.strftime('%Y-%m-%dT%H:%M:%S')}",
         f"prompt_count: {len(all_prompts)}",
+        f"source: {source}",
         "tags:",
-        "  - claude-code",
+        f"  - {source}",
         "  - promptvault",
         "---",
         "",
@@ -342,7 +427,8 @@ def build_database(
             start_ts INTEGER NOT NULL,
             end_ts INTEGER NOT NULL,
             prompt_count INTEGER NOT NULL,
-            md_path TEXT
+            md_path TEXT,
+            source TEXT NOT NULL DEFAULT 'claude-code'
         )
     """)
 
@@ -372,14 +458,25 @@ def build_database(
         summary = (summaries or {}).get(session_id)
         display_name = make_display_name(prompts, session_id, summary)
         project = prompts[0].get("project", "")
+        source = prompts[0].get("source", SOURCE_CLAUDE)
         start_ts = prompts[0]["timestamp"]
         end_ts = prompts[-1]["timestamp"]
         md_path = md_paths.get(session_id, "")
 
         # Use real prompt count (0 if only slash commands)
         conn.execute(
-            "INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (session_id, name, display_name, project, start_ts, end_ts, len(real_prompts), md_path),
+            "INSERT INTO conversations VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                session_id,
+                name,
+                display_name,
+                project,
+                start_ts,
+                end_ts,
+                len(real_prompts),
+                md_path,
+                source,
+            ),
         )
 
         # Only index real prompts for search
@@ -403,10 +500,16 @@ def main(quiet: bool = False):
 
     history_path = Path(os.environ.get("PROMPTVAULT_HISTORY", str(DEFAULT_HISTORY_PATH)))
     output_dir = Path(os.environ.get("PROMPTVAULT_OUTPUT", str(DEFAULT_OUTPUT_DIR)))
+    codex_dir = Path(os.environ.get("PROMPTVAULT_CODEX_SESSIONS", str(DEFAULT_CODEX_SESSIONS_DIR)))
 
-    if not history_path.exists():
+    has_claude = history_path.exists()
+    has_codex = codex_dir.exists()
+    if not has_claude and not has_codex:
         if not quiet:
-            print(f"Error: history file not found at {history_path}", file=sys.stderr)
+            print(
+                f"Error: no history found (Claude: {history_path}, Codex: {codex_dir})",
+                file=sys.stderr,
+            )
             sys.exit(1)
         return
 
@@ -419,8 +522,16 @@ def main(quiet: bool = False):
     vault_dir.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    log(f"Reading history from {history_path}...")
-    sessions = parse_history(history_path)
+    # Session IDs are disjoint UUIDs across tools, so a plain merge is collision-safe.
+    sessions: dict[str, list[dict]] = {}
+    if has_claude:
+        log(f"Reading Claude history from {history_path}...")
+        sessions.update(parse_history(history_path))
+    if has_codex:
+        log(f"Reading Codex sessions from {codex_dir}...")
+        codex_sessions = parse_codex_sessions(codex_dir)
+        sessions.update(codex_sessions)
+        log(f"Found {len(codex_sessions)} Codex conversations")
 
     log(f"Found {len(sessions)} conversations, {sum(len(p) for p in sessions.values())} prompts")
 

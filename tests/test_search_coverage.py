@@ -312,7 +312,7 @@ class TestCmdSearchInteractive:
             """CREATE TABLE conversations (
                 session_id TEXT, display_name TEXT, name TEXT,
                 project TEXT, start_ts INTEGER, end_ts INTEGER,
-                prompt_count INTEGER, md_path TEXT
+                prompt_count INTEGER, md_path TEXT, source TEXT
             )"""
         )
         conn.commit()
@@ -403,7 +403,7 @@ class TestCmdRecent:
             """CREATE TABLE conversations (
                 session_id TEXT, display_name TEXT, name TEXT,
                 project TEXT, start_ts INTEGER, end_ts INTEGER,
-                prompt_count INTEGER, md_path TEXT
+                prompt_count INTEGER, md_path TEXT, source TEXT
             )"""
         )
         conn.execute(
@@ -801,7 +801,7 @@ class TestCmdRecentFzfBranch:
             """CREATE TABLE conversations (
                 session_id TEXT, display_name TEXT, name TEXT,
                 project TEXT, start_ts INTEGER, end_ts INTEGER,
-                prompt_count INTEGER, md_path TEXT
+                prompt_count INTEGER, md_path TEXT, source TEXT
             )"""
         )
         conn.execute(

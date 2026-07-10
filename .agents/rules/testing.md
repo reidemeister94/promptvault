@@ -6,7 +6,7 @@ paths:
 
 # Testing
 
-`python -m pytest tests/ -v` — 340 tests, synthetic data only, never touch real `~/.claude/`.
+`python -m pytest tests/ -v` — 369 tests, synthetic data only, never touch real `~/.claude/` or `~/.codex/` (autouse `_isolate_codex` fixture pins `PROMPTVAULT_CODEX_SESSIONS` to a nonexistent path).
 
 - `conftest.py`: `tmp_history`, `tmp_output` fixtures (synthetic history.jsonl).
 - `test_e2e.py`: `e2e_env` fixture (11 sessions, full vault+DB, covers all edge cases).

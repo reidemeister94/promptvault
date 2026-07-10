@@ -12,16 +12,16 @@
 </p>
 
 <p align="center">
-  <b>Your Claude Code conversations, searchable forever.</b>
+  <b>Your Claude Code & Codex conversations, searchable forever.</b>
 </p>
 
 ---
 
 ## The Problem
 
-Claude Code stores conversations in `~/.claude/history.jsonl` — not searchable, not browsable, not persistent. Claude compacts and deletes old sessions without warning.
+Claude Code (`~/.claude/history.jsonl`) and Codex (`~/.codex/sessions/`) store conversations — not searchable, not browsable, not persistent. Both agents compact and delete old sessions without warning.
 
-**pv** turns that history into a **searchable markdown library + SQLite database**. Browse in Obsidian, search from the terminal with fzf. Zero dependencies. Pure stdlib.
+**pv** turns that history into a **searchable markdown library + SQLite database**. It auto-detects Codex and merges both agents into one vault, tagging each conversation by source (`cc` = Claude Code, `cx` = Codex) with a `ctrl-s` filter to narrow by agent. Browse in Obsidian, search from the terminal with fzf. Zero dependencies. Pure stdlib.
 
 <p align="center">
   <img src="docs/images/terminal-demo.svg" alt="pv in action" width="100%"/>
@@ -64,10 +64,10 @@ Optional: install [fzf](https://github.com/junegunn/fzf) for the interactive UI 
   <img src="docs/images/how-it-works.svg" alt="How pv works" width="100%"/>
 </p>
 
-`pv-sync` reads `history.jsonl`, groups prompts by conversation, and generates:
+`pv-sync` reads Claude Code's `history.jsonl` and (if `~/.codex/` exists) Codex's rollout sessions, groups prompts by conversation, and generates:
 
-1. **Markdown vault** — One `.md` per conversation, `YYYY/MM/` structure, YAML frontmatter. Drop into Obsidian.
-2. **SQLite database** — FTS5 full-text search with BM25 ranking. Millisecond queries.
+1. **Markdown vault** — One `.md` per conversation, `YYYY/MM/` structure, YAML frontmatter (incl. `source`). Drop into Obsidian.
+2. **SQLite database** — FTS5 full-text search with BM25 ranking. Millisecond queries. Each conversation keeps its `source`.
 
 The sync is **idempotent** — always rebuilds from source, impossible to reach a bad state. Resolves pasted-text placeholders, deduplicates prompts, filters slash commands, cleans whitespace.
 
@@ -174,6 +174,7 @@ Open as an Obsidian vault. The Calendar plugin works well for browsing.
 | `PROMPTVAULT_VAULT` | `~/.claude/prompt-library/vault` |
 | `PROMPTVAULT_PROJECTS` | `~/.claude/projects` |
 | `PROMPTVAULT_CAPTURE_LOG` | `~/.claude/prompt-library/capture.jsonl` |
+| `PROMPTVAULT_CODEX_SESSIONS` | `~/.codex/sessions` |
 
 ---
 
