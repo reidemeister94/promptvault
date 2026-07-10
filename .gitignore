@@ -117,5 +117,7 @@ project_summary.txt
 
 docs/plans/
 docs/chronicles/
+docs/ATLAS.md
+AGENTS.override.md
 
 scripts/generate_images.py
