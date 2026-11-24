@@ -8,6 +8,7 @@ import re
 import shutil
 import sqlite3
 import sys
+import tempfile
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,6 +21,7 @@ DEFAULT_CODEX_SESSIONS_DIR = Path.home() / ".codex" / "sessions"
 
 SOURCE_CLAUDE = "claude-code"
 SOURCE_CODEX = "codex"
+PASTE_MARKER = re.compile(r"\[Pasted text #(\d+)[^\]]*\]")
 
 SLASH_COMMANDS = frozenset(
     {
@@ -66,48 +68,83 @@ def load_session_summaries(projects_dir: Path) -> dict[str, str]:
     return summaries
 
 
-def _resolve_paste_content(paste_info: dict, paste_cache_dir: Path) -> str:
-    """Resolve pasted content from inline content or paste-cache file."""
+def _archive_paste(path: Path, content: str) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as temp:
+            temp_path = Path(temp.name)
+            temp.write(content)
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
+def _read_archived_paste(path: Path | None) -> str:
+    if path is None:
+        return ""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
+
+
+def _resolve_paste_content(
+    paste_info: dict, paste_cache_dir: Path, paste_archive_dir: Path | None = None
+) -> str:
+    """Resolve a paste and retain any cache file needed for future syncs."""
     content = paste_info.get("content", "")
     if content:
         return content.strip()
-    # Fallback: Claude Code stores large pastes as hash-referenced files
-    content_hash = paste_info.get("contentHash", "")
-    if content_hash:
-        cache_file = paste_cache_dir / f"{content_hash}.txt"
-        if cache_file.exists():
-            try:
-                return cache_file.read_text(encoding="utf-8").strip()
-            except OSError:
-                pass
-    return ""
+    content_hash = paste_info.get("contentHash")
+    if not isinstance(content_hash, str) or not re.fullmatch(r"[0-9a-fA-F]+", content_hash):
+        return ""
+
+    filename = f"{content_hash}.txt"
+    archived = paste_archive_dir / filename if paste_archive_dir is not None else None
+    saved = _read_archived_paste(archived)
+    if saved:
+        return saved
+    try:
+        content = (paste_cache_dir / filename).read_text(encoding="utf-8")
+    except OSError:
+        # Another sync may have archived the paste before Claude removed it.
+        return _read_archived_paste(archived)
+    resolved = content.strip()
+    if archived is not None and resolved:
+        _archive_paste(archived, content)
+    return resolved
 
 
-def resolve_pasted_content(entry: dict, paste_cache_dir: Path | None = None) -> str:
+def resolve_pasted_content(
+    entry: dict, paste_cache_dir: Path | None = None, paste_archive_dir: Path | None = None
+) -> str:
     """Replace [Pasted text #N ...] placeholders with actual pasted content."""
     display = entry["display"]
     pasted = entry.get("pastedContents", {})
     if not pasted:
         return display
 
-    if paste_cache_dir is None:
-        paste_cache_dir = DEFAULT_PASTE_CACHE_DIR
+    cache_dir = paste_cache_dir if paste_cache_dir is not None else DEFAULT_PASTE_CACHE_DIR
 
-    for key, paste_info in pasted.items():
+    def replace_marker(match: re.Match[str]) -> str:
+        paste_info = pasted.get(match[1])
         if not isinstance(paste_info, dict):
-            continue
-        content = _resolve_paste_content(paste_info, paste_cache_dir)
-        if not content:
-            continue
-        # Match [Pasted text #N] or [Pasted text #N +M lines]
-        pattern = rf"\[Pasted text #{re.escape(key)}[^\]]*\]"
-        # re.sub treats backslashes in replacement as escapes — use a lambda to avoid that
-        display = re.sub(pattern, lambda _: content, display)
+            return match[0]
+        return _resolve_paste_content(paste_info, cache_dir, paste_archive_dir) or match[0]
 
-    return display
+    return PASTE_MARKER.sub(replace_marker, display)
 
 
-def parse_history(history_path: Path) -> dict[str, list[dict]]:
+def parse_history(
+    history_path: Path,
+    *,
+    paste_cache_dir: Path | None = None,
+    paste_archive_dir: Path | None = None,
+) -> dict[str, list[dict]]:
     """Parse history.jsonl into sessions. Each session is a list of prompt entries."""
     sessions: dict[str, list[dict]] = defaultdict(list)
     with open(history_path) as f:
@@ -116,8 +153,7 @@ def parse_history(history_path: Path) -> dict[str, list[dict]]:
             if not line:
                 continue
             entry = json.loads(line)
-            # Resolve pasted content placeholders into actual text
-            entry["display"] = resolve_pasted_content(entry)
+            entry["display"] = resolve_pasted_content(entry, paste_cache_dir, paste_archive_dir)
             entry["source"] = SOURCE_CLAUDE
             sessions[entry["sessionId"]].append(entry)
     return {sid: _sort_and_dedup(ents) for sid, ents in sessions.items()}
@@ -516,17 +552,20 @@ def main(quiet: bool = False):
     vault_dir = output_dir / "vault"
     db_path = output_dir / "prompts.db"
 
-    # Clean vault for idempotent rebuild
-    if vault_dir.exists():
-        shutil.rmtree(vault_dir)
-    vault_dir.mkdir(parents=True, exist_ok=True)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
     # Session IDs are disjoint UUIDs across tools, so a plain merge is collision-safe.
     sessions: dict[str, list[dict]] = {}
     if has_claude:
         log(f"Reading Claude history from {history_path}...")
-        sessions.update(parse_history(history_path))
+        paste_cache_dir = Path(
+            os.environ.get("PROMPTVAULT_PASTE_CACHE", str(DEFAULT_PASTE_CACHE_DIR))
+        )
+        sessions.update(
+            parse_history(
+                history_path,
+                paste_cache_dir=paste_cache_dir,
+                paste_archive_dir=output_dir / "pastes",
+            )
+        )
     if has_codex:
         log(f"Reading Codex sessions from {codex_dir}...")
         codex_sessions = parse_codex_sessions(codex_dir)
@@ -538,6 +577,11 @@ def main(quiet: bool = False):
     projects_dir = Path(os.environ.get("PROMPTVAULT_PROJECTS", str(DEFAULT_PROJECTS_DIR)))
     summaries = load_session_summaries(projects_dir)
     log(f"Loaded {len(summaries)} session titles from Claude Code")
+
+    # Keep existing outputs until input parsing and paste archival have succeeded.
+    if vault_dir.exists():
+        shutil.rmtree(vault_dir)
+    vault_dir.mkdir(parents=True, exist_ok=True)
 
     log("Generating markdown vault...")
     md_paths = generate_vault(sessions, vault_dir)
