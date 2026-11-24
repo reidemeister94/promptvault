@@ -252,6 +252,7 @@ def e2e_env(tmp_path: Path):
 def test_sync_retains_paste_after_claude_cache_removal(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("PYTHONIOENCODING", "utf-8")
     claude_dir = tmp_path / ".claude"
     claude_dir.mkdir()
     cache_dir = tmp_path / "custom-paste-cache"
