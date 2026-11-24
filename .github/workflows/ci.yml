@@ -46,7 +46,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install ruff
-        run: pip install ruff
+        run: pip install --constraint requirements-dev.txt ruff
 
       - name: Lint
         run: ruff check .
