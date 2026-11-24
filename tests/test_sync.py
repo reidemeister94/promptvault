@@ -330,6 +330,24 @@ class TestBuildDatabase:
 class TestResolvePasteContent:
     """Unit tests for the low-level _resolve_paste_content helper."""
 
+    def test_uses_paste_archived_during_cache_removal(self, tmp_path: Path, monkeypatch):
+        cache_dir = tmp_path / "paste-cache"
+        archive_dir = tmp_path / "pastes"
+        archive_dir.mkdir()
+        cache_file = cache_dir / "abc123.txt"
+        archived_file = archive_dir / cache_file.name
+        original_read = Path.read_text
+
+        def read_text(path, *args, **kwargs):
+            if path == cache_file:
+                archived_file.write_text("paste archived by another sync", encoding="utf-8")
+                raise FileNotFoundError(cache_file)
+            return original_read(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", read_text)
+        result = _resolve_paste_content({"contentHash": "abc123"}, cache_dir, archive_dir)
+        assert result == "paste archived by another sync"
+
     def test_whitespace_only_content_returns_empty(self, tmp_path: Path):
         """Whitespace-only content is truthy, so if-branch runs, but strip() yields ''."""
         cache_dir = tmp_path / "paste-cache"

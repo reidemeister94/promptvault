@@ -69,7 +69,9 @@ Optional: install [fzf](https://github.com/junegunn/fzf) for the interactive UI 
 1. **Markdown vault** — One `.md` per conversation, `YYYY/MM/` structure, YAML frontmatter (incl. `source`). Drop into Obsidian.
 2. **SQLite database** — FTS5 full-text search with BM25 ranking. Millisecond queries. Each conversation keeps its `source`.
 
-The sync is **idempotent** — always rebuilds from source, impossible to reach a bad state. Resolves pasted-text placeholders, deduplicates prompts, filters slash commands, cleans whitespace.
+Each sync rebuilds the vault and index, resolves pasted-text placeholders, deduplicates prompts, filters slash commands, and cleans whitespace.
+
+Promptvault keeps referenced Claude Code paste files under `PROMPTVAULT_OUTPUT/pastes/` so later syncs can restore the full text after Claude Code removes its cache. If a paste is already missing on the first sync, restore a copy of its cache file to recover it.
 
 ---
 
@@ -173,6 +175,7 @@ Open as an Obsidian vault. The Calendar plugin works well for browsing.
 | `PROMPTVAULT_DB` | `~/.claude/prompt-library/prompts.db` |
 | `PROMPTVAULT_VAULT` | `~/.claude/prompt-library/vault` |
 | `PROMPTVAULT_PROJECTS` | `~/.claude/projects` |
+| `PROMPTVAULT_PASTE_CACHE` | `~/.claude/paste-cache` |
 | `PROMPTVAULT_CAPTURE_LOG` | `~/.claude/prompt-library/capture.jsonl` |
 | `PROMPTVAULT_CODEX_SESSIONS` | `~/.codex/sessions` |
 

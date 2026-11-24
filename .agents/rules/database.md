@@ -7,7 +7,7 @@ paths:
 
 ## Sources (both merged into one vault + DB)
 
-- **Claude Code** — `~/.claude/history.jsonl` (flat prompt log, ms timestamps). `source='claude-code'`.
+- **Claude Code** — `~/.claude/history.jsonl` (flat prompt log, ms timestamps). `source='claude-code'`. Sync retains referenced paste-cache text under `PROMPTVAULT_OUTPUT/pastes/` for future rebuilds.
 - **Codex** — `~/.codex/sessions/**/rollout-*.jsonl` (auto-detected if present). User prompts = `event_msg`/`user_message` records; project = `session_meta.payload.cwd`; ISO timestamps → ms. `source='codex'`. Flat `~/.codex/history.jsonl` is NOT used (no project, ts in seconds).
 
 Session IDs are disjoint UUIDs across tools → `main()` merges the two session maps by `session_id`; `source` is the discriminator (a column + a markdown tag + an fzf badge/filter), never a namespace prefix.

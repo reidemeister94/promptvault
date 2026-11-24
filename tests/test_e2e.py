@@ -15,6 +15,7 @@ The fixture creates a rich dataset covering all edge cases:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -23,13 +24,6 @@ from pathlib import Path
 
 import pytest
 
-from promptvault.sync import (
-    build_database,
-    generate_index,
-    generate_vault,
-    load_session_summaries,
-    parse_history,
-)
 from promptvault.search import (
     _build_conversation_lines,
     _fts_prepare_query,
@@ -42,7 +36,13 @@ from promptvault.search import (
     cmd_stats,
     truncate,
 )
-
+from promptvault.sync import (
+    build_database,
+    generate_index,
+    generate_vault,
+    load_session_summaries,
+    parse_history,
+)
 
 # ---------------------------------------------------------------------------
 # Rich test dataset
@@ -247,6 +247,58 @@ def e2e_env(tmp_path: Path):
         "sessions": sessions,
         "md_paths": md_paths,
     }
+
+
+def test_sync_retains_paste_after_claude_cache_removal(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    cache_dir = tmp_path / "custom-paste-cache"
+    cache_dir.mkdir(parents=True)
+    text = "copyretention prima riga\nseconda riga con accento: è"
+    digest = hashlib.sha256(text.encode()).hexdigest()[:16]
+    cache_file = cache_dir / f"{digest}.txt"
+    cache_file.write_text(text, encoding="utf-8")
+    history = claude_dir / "history.jsonl"
+    entry = {
+        "display": "[Pasted text #1 +2 lines]",
+        "pastedContents": {"1": {"id": 1, "type": "text", "contentHash": digest}},
+        "project": "/test",
+        "sessionId": "sess-paste",
+        "timestamp": 1700000000000,
+    }
+    history.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    output = tmp_path / "output"
+    monkeypatch.setenv("PROMPTVAULT_HISTORY", str(history))
+    monkeypatch.setenv("PROMPTVAULT_PROJECTS", str(claude_dir / "projects"))
+    monkeypatch.setenv("PROMPTVAULT_OUTPUT", str(output))
+    monkeypatch.setenv("PROMPTVAULT_PASTE_CACHE", str(cache_dir))
+
+    sync = [sys.executable, "-m", "promptvault.sync"]
+    export = [
+        sys.executable,
+        "-m",
+        "promptvault.search",
+        "--db",
+        str(output / "prompts.db"),
+        "export",
+        "--query",
+        "copyretention",
+        "--format",
+        "json",
+    ]
+    subprocess.run(sync, check=True, capture_output=True)
+    first_export = json.loads(subprocess.check_output(export))
+    assert len(first_export) == 1
+    assert first_export[0]["prompt"] == text
+
+    cache_file.unlink()
+    subprocess.run(sync, check=True, capture_output=True)
+    assert json.loads(subprocess.check_output(export)) == first_export
+    conversation = output / "vault" / first_export[0]["md_path"]
+    assert text in conversation.read_text(encoding="utf-8")
+    assert (output / "pastes" / cache_file.name).read_text(encoding="utf-8") == text
 
 
 # ---------------------------------------------------------------------------
